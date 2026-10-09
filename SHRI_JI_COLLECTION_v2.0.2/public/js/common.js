@@ -74,11 +74,19 @@ function init() {
   const h = $("#hdr"), f = $("#ftr");
   if (h && !h.firstElementChild) h.innerHTML = headerHtml();
   if (f && !f.firstElementChild) f.innerHTML = footerHtml();
-  const btn = $("#menuBtn"), panel = $("#menuPanel");
-  if (btn && panel) {
-    const set = (open) => { panel.hidden = !open; btn.setAttribute("aria-expanded", String(open)); };
+  const btn = $("#menuBtn"), panel = $("#menuPanel"), bg = $("#drawerBg"), x = $("#menuClose");
+  if (btn && panel && bg) {
+    const set = (open) => {
+      panel.hidden = bg.hidden = !open; btn.setAttribute("aria-expanded", String(open));
+      document.body.style.overflow = open ? "hidden" : "";
+      (open ? x : btn).focus();
+    };
     btn.addEventListener("click", () => set(panel.hidden));
-    document.addEventListener("keydown", (e) => e.key === "Escape" && set(false));
+    x.addEventListener("click", () => set(false));
+    bg.addEventListener("click", () => set(false));
+    panel.addEventListener("click", (e) => e.target.closest("a") && set(false));
+    document.addEventListener("keydown", (e) => e.key === "Escape" && !panel.hidden && set(false));
+    window.matchMedia("(min-width:900px)").addEventListener("change", (m) => m.matches && !panel.hidden && set(false));
   }
   cart.badge();
 }
