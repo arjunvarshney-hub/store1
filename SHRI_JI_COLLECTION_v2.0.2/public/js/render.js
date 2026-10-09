@@ -38,17 +38,19 @@ const I = {
 };
 
 export function headerHtml() {
-  const groups = GROUPS.map(
-    (g) =>
-      `<div class="mn-group"><a class="mn-head" href="/category/${g.slug}">${esc(g.name)}</a>${CATEGORIES.filter((c) => c.group === g.slug)
-        .map((c) => `<a href="/category/${c.slug}">${esc(c.name)}</a>`)
-        .join("")}</div>`
-  ).join("");
+  const grpLinks = (g) => CATEGORIES.filter((c) => c.group === g.slug).map((c) => `<a href="/category/${c.slug}">${esc(c.name)}</a>`).join("");
+  const drawerGroups = GROUPS.map((g) => `<div class="mn-group"><a class="mn-head" href="/category/${g.slug}">${esc(g.name)}</a>${grpLinks(g)}</div>`).join("");
+  const dd = GROUPS.map((g) => `<div class="dd"><a class="dd-t" href="/category/${g.slug}">${esc(g.name)} <span aria-hidden="true">▾</span></a><div class="dd-panel"><a class="all" href="/category/${g.slug}">All ${esc(g.name)}</a>${grpLinks(g)}</div></div>`).join("");
   return `<div class="strip">Cash on Delivery &bull; UPI &amp; Cards &bull; Sarai Tareen, Sambhal</div>
-<div class="wrap bar"><button class="ibtn" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-controls="menuPanel">${I.menu}</button>
+<div class="wrap bar"><button class="ibtn menu-btn" id="menuBtn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="menuPanel">${I.menu}</button>
 <a class="logo" href="/" aria-label="SHRI JI COLLECTION home"><span>SHRI JI</span><small>COLLECTION</small></a>
-<nav class="actions" aria-label="Main"><a class="ibtn" href="/shop" aria-label="Search">${I.search}</a><a class="ibtn" href="/account" aria-label="My account">${I.user}</a><a class="ibtn cartbtn" href="/cart" aria-label="Cart">${I.bag}<span class="cnt" id="cartCount" hidden>0</span></a></nav></div>
-<div class="menu" id="menuPanel" hidden><div class="wrap"><form action="/shop" method="get" class="msearch" role="search"><input type="search" name="q" placeholder="Search poshak, kurti, mukut…" aria-label="Search products" enterkeyhint="search"><button class="btn primary" type="submit">Search</button></form><div class="mn">${groups}</div><div class="mn-links"><a href="/shop">All products</a><a href="/account">My account &amp; orders</a><a href="/#contact">Contact</a></div></div></div>`;
+<form class="hsearch" action="/shop" method="get" role="search"><input type="search" name="q" placeholder="Search poshak, kurti, mukut…" aria-label="Search products" enterkeyhint="search"><button type="submit" aria-label="Search">${I.search}</button></form>
+<nav class="actions" aria-label="Account and cart"><a class="ibtn sbtn" href="/shop" aria-label="Search">${I.search}</a><a class="ibtn" href="/account" aria-label="My account">${I.user}</a><a class="ibtn cartbtn" href="/cart" aria-label="Cart">${I.bag}<span class="cnt" id="cartCount" hidden>0</span></a></nav></div>
+<nav class="dnav" aria-label="Categories"><div class="wrap dnav-in"><a href="/shop">All products</a>${dd}<a href="/#contact">Contact</a></div></nav>
+<div class="drawer-bg" id="drawerBg" hidden></div>
+<aside class="drawer" id="menuPanel" hidden aria-label="Menu"><div class="drawer-h"><b>Menu</b><button class="ibtn dark" id="menuClose" type="button" aria-label="Close menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+<form action="/shop" method="get" class="msearch" role="search"><input type="search" name="q" placeholder="Search products…" aria-label="Search products" enterkeyhint="search"><button class="btn primary" type="submit">Go</button></form>
+<div class="mn">${drawerGroups}</div><div class="mn-links"><a href="/shop">All products</a><a href="/account">My account &amp; orders</a><a href="/cart">Cart</a><a href="/#contact">Contact</a></div></aside>`;
 }
 
 export function footerHtml() {
