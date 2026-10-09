@@ -1,0 +1,11 @@
+import { createClient } from "@supabase/supabase-js";
+const url=process.env.SUPABASE_URL;
+const service=process.env.SUPABASE_SERVICE_ROLE_KEY;
+const anonKey=process.env.SUPABASE_ANON_KEY||process.env.SUPABASE_PUBLISHABLE_KEY;
+if(!url||!service||!anonKey) console.warn("Supabase environment variables are not fully configured.");
+export const admin=createClient(url||"https://example.supabase.co",service||"missing-service-role-key",{auth:{persistSession:false,autoRefreshToken:false}});
+export const anon=createClient(url||"https://example.supabase.co",anonKey||"missing-anon-key",{auth:{persistSession:false,autoRefreshToken:false}});
+function cookieValue(req,name){const h=req.headers?.cookie||"";for(const part of h.split(";")){const i=part.indexOf("=");if(i>0&&part.slice(0,i).trim()===name){try{return decodeURIComponent(part.slice(i+1).trim())}catch{return null}}}return null}
+export async function getUser(req,res){const auth=req.headers?.authorization||"";const bearer=auth.startsWith("Bearer ")?auth.slice(7):null;const token=bearer||cookieValue(req,"sjc_access");if(!token)return null;try{let {data,error}=await anon.auth.getUser(token);if(!error&&data?.user)return data.user;if(bearer||!res)return null;const refresh=cookieValue(req,"sjc_refresh");if(!refresh)return null;const refreshed=await anon.auth.refreshSession({refresh_token:refresh});if(refreshed.error||!refreshed.data?.session){clearAuthCookies(res);return null;}setAuthCookies(res,refreshed.data.session);return refreshed.data.user||null;}catch{return null}}
+export function setAuthCookies(res,session){const secure=process.env.NODE_ENV==="production"?"; Secure":"";res.setHeader("Set-Cookie",[`sjc_access=${encodeURIComponent(session.access_token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${Math.max(60,session.expires_in||3600)}${secure}`,`sjc_refresh=${encodeURIComponent(session.refresh_token)}; HttpOnly; Path=/api; SameSite=Lax; Max-Age=${60*60*24*30}${secure}`]);}
+export function clearAuthCookies(res){const secure=process.env.NODE_ENV==="production"?"; Secure":"";res.setHeader("Set-Cookie",[`sjc_access=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${secure}`,`sjc_refresh=; HttpOnly; Path=/api; SameSite=Lax; Max-Age=0${secure}`]);}
