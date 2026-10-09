@@ -1,0 +1,88 @@
+import "./helpers.mjs";
+import test from "node:test";
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import * as v from "../api/_validate.js";
+import { verifyCheckoutSignature, verifyWebhookSignature } from "../api/_razorpay.js";
+import { esc, effPrice, safeUrl, cardHtml } from "../public/js/render.js";
+import { CATEGORIES, GROUPS } from "../public/js/categories.js";
+import { productPage, listingPage, homePage } from "../api/_layout.js";
+
+const throwsStatus = (fn, status = 400) => assert.throws(fn, (e) => e.status === status);
+const PFX = "https://abc.supabase.co/storage/v1/object/public/product-images/";
+const goodCustomer = { name: "Ram Kumar", phone: "+91 99278 92667", email: "R@Example.com", address: "House 4, Tirth Mandir road", city: "Sambhal", state: "Uttar Pradesh", pincode: "244303" };
+
+test("categories: all 18 required categories present, in 2 groups", () => {
+  assert.equal(CATEGORIES.length, 18); assert.equal(GROUPS.length, 2);
+  for (const n of ["Laddu Gopal Poshak", "Mukut", "Thakur Ji Shringar", "Kurti", "Fall and Astar", "Dress Material"]) assert.ok(CATEGORIES.some((c) => c.name === n), n);
+});
+test("customer validation: normalises phone/email, rejects bad input", () => {
+  const c = v.customer(goodCustomer);
+  assert.equal(c.phone, "9927892667"); assert.equal(c.email, "r@example.com");
+  throwsStatus(() => v.customer({ ...goodCustomer, phone: "12345" }));
+  throwsStatus(() => v.customer({ ...goodCustomer, pincode: "0123" }));
+  throwsStatus(() => v.customer({ ...goodCustomer, name: "A" }));
+  throwsStatus(() => v.customer({ ...goodCustomer, address: "short" }));
+  throwsStatus(() => v.customer({ ...goodCustomer, email: "not-an-email" }));
+  throwsStatus(() => v.customer(null));
+  throwsStatus(() => v.customer({ ...goodCustomer, name: { $ne: 1 } }));
+});
+test("order items: only ids/qty/size are accepted; qty bounds enforced", () => {
+  assert.deepEqual(v.orderItems([{ productId: "5", qty: 2, size: "M", price: 1 }]), [{ productId: 5, qty: 2, size: "M" }]);   // client price is dropped
+  throwsStatus(() => v.orderItems([])); throwsStatus(() => v.orderItems([{ productId: 1, qty: 0 }]));
+  throwsStatus(() => v.orderItems([{ productId: 1, qty: 11 }])); throwsStatus(() => v.orderItems([{ productId: -1, qty: 1 }]));
+  throwsStatus(() => v.orderItems([{ productId: 1, qty: 1.5 }])); throwsStatus(() => v.orderItems(Array(21).fill({ productId: 1, qty: 1 })));
+});
+test("product validation: whitelist, category, sale<price, image host", () => {
+  const ok = { name: "Red Velvet Poshak", category: "laddu-gopal-poshak", price: 500, sale_price: 399, stock: 5, sizes: "1, 2, 3", image_urls: [PFX + "products/a.jpg"], active: "true", evil: "x", id: 99 };
+  const p = v.product(ok, PFX);
+  assert.deepEqual(p.sizes, ["1", "2", "3"]); assert.equal(p.evil, undefined); assert.equal(p.id, undefined); assert.equal(p.active, true);
+  throwsStatus(() => v.product({ ...ok, category: "weapons" }, PFX));
+  throwsStatus(() => v.product({ ...ok, sale_price: 600 }, PFX)); throwsStatus(() => v.product({ ...ok, price: 0 }, PFX));
+  throwsStatus(() => v.product({ ...ok, price: -5 }, PFX)); throwsStatus(() => v.product({ ...ok, stock: -1 }, PFX));
+  throwsStatus(() => v.product({ ...ok, image_urls: ["javascript:alert(1)"] }, PFX));
+  throwsStatus(() => v.product({ ...ok, image_urls: ["https://evil.example/x.jpg"] }, PFX));
+  throwsStatus(() => v.product({ ...ok, image_urls: Array(9).fill(PFX + "a.jpg") }, PFX));
+});
+test("image magic bytes: jpg/png/webp pass; svg/html/exe rejected", () => {
+  assert.equal(v.imageKind(Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(20)])).ext, "jpg");
+  assert.equal(v.imageKind(Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(20)])).ext, "png");
+  assert.equal(v.imageKind(Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WEBP"), Buffer.alloc(8)])).ext, "webp");
+  assert.equal(v.imageKind(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>')), null);
+  assert.equal(v.imageKind(Buffer.from("<html><script>alert(1)</script></html>")), null);
+});
+test("razorpay signatures verify correctly and reject tampering", () => {
+  const secret = "s3cret", sig = crypto.createHmac("sha256", secret).update("order_A1b2C3d4|pay_X9y8Z7w6").digest("hex");
+  assert.ok(verifyCheckoutSignature("order_A1b2C3d4", "pay_X9y8Z7w6", sig, secret));
+  assert.ok(!verifyCheckoutSignature("order_A1b2C3d4", "pay_OTHER00", sig, secret));
+  assert.ok(!verifyCheckoutSignature("order_A1b2C3d4", "pay_X9y8Z7w6", sig.slice(0, -1) + "0", secret));
+  assert.ok(!verifyCheckoutSignature("order_A1b2C3d4", "pay_X9y8Z7w6", "", secret));
+  assert.ok(!verifyCheckoutSignature("order_A1b2C3d4", "pay_X9y8Z7w6", sig, ""));         // no secret configured => never valid
+  const body = Buffer.from('{"event":"payment.captured"}'), ws = crypto.createHmac("sha256", "w").update(body).digest("hex");
+  assert.ok(verifyWebhookSignature(body, ws, "w")); assert.ok(!verifyWebhookSignature(Buffer.from("{}"), ws, "w")); assert.ok(!verifyWebhookSignature(body, undefined, "w"));
+});
+test("render: escaping + safe URLs + price logic", () => {
+  assert.equal(esc(`<img src=x onerror="a('b')">`), "&lt;img src=x onerror=&quot;a(&#39;b&#39;)&quot;&gt;");
+  assert.equal(safeUrl("javascript:alert(1)"), ""); assert.equal(safeUrl("data:text/html,x"), ""); assert.equal(safeUrl("//evil.com/x"), ""); assert.equal(safeUrl("https://a.b/c.jpg"), "https://a.b/c.jpg");
+  assert.equal(effPrice({ price: 500, sale_price: 399 }), 399); assert.equal(effPrice({ price: 500, sale_price: 600 }), 500); assert.equal(effPrice({ price: 500, sale_price: null }), 500);
+});
+const prod = { id: 7, slug: "red-poshak-7", name: `Red <script>alert(1)</script> Poshak`, category: "laddu-gopal-poshak", price: 500, sale_price: 400, description: "Soft velvet\n<b>x</b>", material: "Velvet", sizes: ["1", "2"], image_urls: ["https://abc.supabase.co/storage/v1/object/public/product-images/products/a.jpg", "javascript:alert(1)"], stock: 3 };
+test("SSR product page: XSS escaped, JSON-LD valid, no invented ratings", () => {
+  const html = productPage("https://shop.test", prod, [prod]);
+  assert.ok(!html.includes("<script>alert(1)</script>")); assert.ok(!html.includes('src="javascript:'));
+  const ld = [...html.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/gs)].map((m) => JSON.parse(m[1]));
+  const p = ld.find((x) => x["@type"] === "Product");
+  assert.equal(p.offers.price, "400.00"); assert.equal(p.offers.priceCurrency, "INR"); assert.equal(p.offers.availability, "https://schema.org/InStock");
+  assert.ok(!("aggregateRating" in p) && !("review" in p));
+  assert.ok(html.includes('<link rel="canonical" href="https://shop.test/product/red-poshak-7">'));
+  assert.match(html, /<title>.*Buy Online \| SHRI JI COLLECTION<\/title>/);
+});
+test("SSR listing/home: canonical, noindex on search, product links", () => {
+  const l = listingPage("https://shop.test", { products: [prod], total: 1, page: 1, pageSize: 24, category: "kurti", q: "", sort: "new" });
+  assert.ok(l.includes('href="https://shop.test/category/kurti"') && l.includes("/product/red-poshak-7") && l.includes('content="index,follow"'));
+  const s = listingPage("https://shop.test", { products: [], total: 0, page: 1, pageSize: 24, q: `"><script>x</script>`, sort: "new" });
+  assert.ok(s.includes('content="noindex,follow"') && !s.includes("<script>x</script>"));
+  const h = homePage("https://shop.test", { products: [prod] });
+  assert.ok(h.includes("ClothingStore") && h.includes("Sarai Tareen") && h.includes("244303"));
+  assert.ok(cardHtml(prod).includes("/product/red-poshak-7"));
+});
