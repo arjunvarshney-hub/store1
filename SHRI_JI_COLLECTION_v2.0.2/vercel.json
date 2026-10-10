@@ -37,6 +37,10 @@
       "destination": "/api/admin?action=orders"
     },
     {
+      "source": "/api/admin/reviews",
+      "destination": "/api/admin?action=reviews"
+    },
+    {
       "source": "/api/admin/upload-image",
       "destination": "/api/upload-image"
     },

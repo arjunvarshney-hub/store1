@@ -4,7 +4,7 @@ import { GROUPS, CATEGORIES, catName } from "./categories.js";
 
 const R = $("#root");
 const STATUSES = ["pending", "confirmed", "packed", "shipped", "delivered", "cancelled"];
-let tab = "products", products = [], orders = [], filter = { search: "", status: "", payment: "" };
+let tab = "products", products = [], orders = [], reviewStatus = "pending", filter = { search: "", status: "", payment: "" };
 
 async function boot() {
   try {
@@ -15,10 +15,14 @@ async function boot() {
   show("products");
 }
 function shell(inner) {
-  R.innerHTML = `<div class="atabs" role="tablist"><button class="${tab === "products" ? "on" : ""}" data-t="products">Products</button><button class="${tab === "orders" ? "on" : ""}" data-t="orders">Orders</button><button class="${tab === "site" ? "on" : ""}" data-t="site">Site</button></div><div id="pane">${inner}</div>`;
+  R.innerHTML = `<div class="atabs" role="tablist"><button class="${tab === "products" ? "on" : ""}" data-t="products" role="tab" aria-selected="${tab === "products"}">Products</button><button class="${tab === "orders" ? "on" : ""}" data-t="orders" role="tab" aria-selected="${tab === "orders"}">Orders</button><button class="${tab === "reviews" ? "on" : ""}" data-t="reviews" role="tab" aria-selected="${tab === "reviews"}">Reviews</button><button class="${tab === "site" ? "on" : ""}" data-t="site" role="tab" aria-selected="${tab === "site"}">Site</button></div><div id="pane">${inner}</div>`;
   $$(".atabs button").forEach((b) => b.addEventListener("click", () => show(b.dataset.t)));
 }
-function show(t) { tab = t; shell('<p class="muted">Loading…</p>'); (t === "products" ? loadProducts : t === "orders" ? loadOrders : loadSite)(); }
+function show(t) {
+  tab = t; shell('<p class="muted">Loading…</p>');
+  const loaders = { products: loadProducts, orders: loadOrders, reviews: loadReviews, site: loadSite };
+  (loaders[t] || loadProducts)();
+}
 
 /* ------------------------------ PRODUCTS ------------------------------ */
 async function loadProducts() {
@@ -219,3 +223,32 @@ async function loadSite() {
   });
 }
 boot();
+
+
+/* --------------------------- CUSTOMER REVIEWS --------------------------- */
+async function loadReviews() {
+  const pane = $("#pane");
+  pane.innerHTML = `<div class="tools"><label class="sm muted" for="reviewFilter">Show reviews by status</label><select id="reviewFilter"><option value="pending" ${reviewStatus === "pending" ? "selected" : ""}>Pending approval</option><option value="approved" ${reviewStatus === "approved" ? "selected" : ""}>Approved / public</option><option value="rejected" ${reviewStatus === "rejected" ? "selected" : ""}>Rejected / hidden</option><option value="all" ${reviewStatus === "all" ? "selected" : ""}>All reviews</option></select></div><p class="sm muted">New reviews stay private until you approve them. Only approved reviews appear on product pages and in public rating totals.</p><div id="reviewList"><p class="muted">Loading reviews…</p></div>`;
+  $("#reviewFilter", pane).addEventListener("change", (e) => { reviewStatus = e.target.value; loadReviews(); });
+  let data;
+  try { data = await api(`/api/admin/reviews?status=${encodeURIComponent(reviewStatus)}`); }
+  catch (error) { $("#reviewList", pane).innerHTML = `<div class="msg err">${esc(error.message)}</div><p class="sm muted">If this says reviews are not configured, run <code>migrations/20261010_product_reviews.sql</code> in Supabase SQL Editor.</p>`; return; }
+  const rows = data.reviews || [];
+  $("#reviewList", pane).innerHTML = rows.map((r) => {
+    const n = Math.max(0, Math.min(5, Number(r.rating) || 0));
+    const product = r.product ? `<a href="/product/${encodeURIComponent(r.product.slug)}" target="_blank" rel="noopener">${esc(r.product.name)}</a>` : `Product #${Number(r.product_id)}`;
+    return `<article class="review-admin-card"><div class="review-head"><div><b>${esc(r.customer_name)}</b><div class="muted sm">${product} · ${fmtDate(r.created_at)}</div></div>${badge(r.status)}</div><div class="review-rating"><span class="stars" role="img" aria-label="${n} out of 5 stars">${"★".repeat(n)}${"☆".repeat(5 - n)}</span> <b>${n}/5</b></div><p class="review-copy">${esc(r.comment).replace(/\n/g, "<br>")}</p><div class="acts">${r.status !== "approved" ? `<button class="btn primary sm" data-review-act="approve" data-review-id="${Number(r.id)}">Approve &amp; publish</button>` : `<button class="btn outline sm" data-review-act="pending" data-review-id="${Number(r.id)}">Hide / pending</button>`}${r.status !== "rejected" ? `<button class="btn outline sm" data-review-act="reject" data-review-id="${Number(r.id)}">Reject</button>` : ""}<button class="btn danger sm" data-review-act="delete" data-review-id="${Number(r.id)}">Delete</button></div></article>`;
+  }).join("") || '<p class="empty">No reviews in this status yet.</p>';
+  $("#reviewList", pane).addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-review-act]"); if (!button) return;
+    const id = Number(button.dataset.reviewId), action = button.dataset.reviewAct;
+    if (action === "delete" && !confirm("Delete this customer review permanently? This cannot be undone.")) return;
+    button.disabled = true;
+    try {
+      if (action === "delete") await api("/api/admin/reviews", { method: "DELETE", body: { id } });
+      else await api("/api/admin/reviews", { method: "PATCH", body: { id, status: action === "approve" ? "approved" : action === "reject" ? "rejected" : "pending" } });
+      toast(action === "approve" ? "Review published" : action === "delete" ? "Review deleted" : action === "reject" ? "Review rejected" : "Review moved to pending");
+      loadReviews();
+    } catch (error) { alert(error.message); button.disabled = false; }
+  });
+}

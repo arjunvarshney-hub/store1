@@ -185,3 +185,97 @@ test("dispatchers route to the right handler and reject unknown actions", async 
   assert.equal((await call(admin, { query: { action: "products" } })).statusCode, 401);
   assert.equal((await call(admin, { query: { action: "orders" }, headers: cookieFor("tokUser") })).statusCode, 403);
 });
+
+test("product review submission validates content and stores new reviews as pending", async () => {
+  const h = await load("../api/products.js"); let inserted = null;
+  fake.resolve = (table, ops) => {
+    if (table === "products") return { data: { id: 7 }, error: null };
+    const op = ops.find((o) => o[0] === "insert");
+    if (table === "product_reviews" && op) inserted = op[1][0];
+    return { data: null, error: null };
+  };
+  const headers = { ...same };
+  const invalid = await call(h, { method: "POST", headers, query: { action: "reviews" }, body: { productId: 7, name: "Asha", rating: 6, comment: "Nice product" } });
+  assert.equal(invalid.statusCode, 400); assert.equal(inserted, null);
+  const ok = await call(h, { method: "POST", headers, query: { action: "reviews" }, body: { productId: 7, name: "Asha", rating: 5, comment: "Lovely poshak", status: "approved", is_admin: true } });
+  assert.equal(ok.statusCode, 201); assert.equal(inserted.status, "pending"); assert.equal(inserted.rating, 5);
+  assert.equal(inserted.is_admin, undefined); assert.equal(inserted.product_id, 7); assert.equal(inserted.customer_name, "Asha");
+});
+
+test("product reviews: honeypot is ignored and public GET filters to approved reviews", async () => {
+  const h = await load("../api/products.js"); let dbCalls = 0, reviewOps = [];
+  fake.resolve = (table, ops) => {
+    dbCalls++;
+    if (table === "products") return { data: { id: 7 }, error: null };
+    if (table === "product_reviews") { reviewOps = ops; return { data: [{ id: 2, product_id: 7, customer_name: "Riya", rating: 4, comment: "Good fabric", created_at: "2026-10-09T12:00:00Z" }], error: null }; }
+    return { data: null, error: null };
+  };
+  fake.rpcImpl = async (name, args) => ({ data: [{ product_id: 7, review_count: 1, average_rating: 4 }], error: null });
+  const spam = await call(h, { method: "POST", headers: same, query: { action: "reviews" }, body: { productId: 7, name: "Bot", rating: 5, comment: "Automated review", website: "spam" } });
+  assert.equal(spam.statusCode, 202); assert.equal(dbCalls, 0);
+  const result = await call(h, { method: "GET", query: { action: "reviews", productId: "7" } });
+  assert.equal(result.statusCode, 200); assert.equal(result.body.summary.count, 1); assert.equal(result.body.reviews.length, 1);
+  assert.ok(reviewOps.some((o) => o[0] === "eq" && o[1][0] === "status" && o[1][1] === "approved"), "only approved reviews are public");
+  assert.ok(reviewOps.some((o) => o[0] === "eq" && o[1][0] === "product_id" && o[1][1] === 7), "reviews are scoped to the requested product");
+});
+
+test("admin review moderation requires an admin and only allows known statuses", async () => {
+  const h = await load("../api/_routes/admin/reviews.js");
+  assert.equal((await call(h, { method: "GET", headers: { ...same, ...cookieFor("tokUser") } })).statusCode, 403);
+  const denied = await call(h, { method: "PATCH", headers: { ...same, ...cookieFor("tokAdmin") }, body: { id: 1, status: "published" } });
+  assert.equal(denied.statusCode, 400);
+  let update;
+  fake.resolve = (table, ops) => {
+    const op = ops.find((o) => o[0] === "update"); if (table === "product_reviews" && op) update = op[1][0];
+    return { data: { id: 1, product_id: 7, customer_name: "Riya", rating: 4, comment: "Good fabric", status: "approved" }, error: null };
+  };
+  const approved = await call(h, { method: "PATCH", headers: { ...same, ...cookieFor("tokAdmin") }, body: { id: 1, status: "approved" } });
+  assert.equal(approved.statusCode, 200); assert.equal(update.status, "approved");
+});
+
+
+test("product SSR route actually loads approved reviews into the product page", async () => {
+  const h = await load("../api/page.js");
+  const product = { id: 7, slug: "red-poshak-7", name: "Red Poshak", category: "laddu-gopal-poshak", price: 500, sale_price: 400, description: "Soft velvet", material: "Velvet", sizes: ["1", "2"], image_urls: [], stock: 3, active: true, created_at: "2026-10-09T10:00:00Z" };
+  const review = { id: 2, product_id: 7, customer_name: "Riya", rating: 5, comment: "Lovely fabric", created_at: "2026-10-09T12:00:00Z" };
+  fake.resolve = (table, ops) => {
+    if (table === "site_settings") return { data: [], error: null };
+    if (table === "products") {
+      const slug = ops.find((op) => op[0] === "eq" && op[1][0] === "slug");
+      return { data: [product], count: 1, error: null };
+    }
+    if (table === "product_reviews") return { data: [review], error: null };
+    return { data: null, error: null };
+  };
+  fake.rpcImpl = async (name) => name === "get_product_review_summary"
+    ? { data: [{ product_id: 7, review_count: 1, average_rating: 5 }], error: null }
+    : { data: null, error: null };
+  const res = await call(h, { query: { type: "product", slug: "red-poshak-7" } });
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body, /Ratings &amp; reviews/);
+  assert.match(res.body, /Lovely fabric/);
+  assert.match(res.body, /5\.0\/5/);
+});
+
+test("Vercel rewrites route admin review moderation to the existing admin dispatcher", () => {
+  const config = JSON.parse(fs.readFileSync("vercel.json", "utf8"));
+  const matches = config.rewrites.filter((r) => r.source === "/api/admin/reviews" && r.destination === "/api/admin?action=reviews");
+  assert.equal(matches.length, 1, "review endpoint should have exactly one rewrite");
+});
+
+test("product SSR remains available when the optional reviews migration has not been applied", async () => {
+  const h = await load("../api/page.js");
+  const product = { id: 7, slug: "red-poshak-7", name: "Red Poshak", category: "laddu-gopal-poshak", price: 500, sale_price: null, description: "Soft velvet", material: "Velvet", sizes: [], image_urls: [], stock: 3, active: true, created_at: "2026-10-09T10:00:00Z" };
+  fake.resolve = (table) => {
+    if (table === "site_settings") return { data: [], error: null };
+    if (table === "products") return { data: [product], count: 1, error: null };
+    if (table === "product_reviews") return { data: null, error: { code: "PGRST205", message: "table not found in schema cache" } };
+    return { data: null, error: null };
+  };
+  fake.rpcImpl = async () => ({ data: null, error: { code: "PGRST202", message: "function not found in schema cache" } });
+  const res = await call(h, { query: { type: "product", slug: "red-poshak-7" } });
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body, /Customer ratings coming soon/);
+  assert.match(res.body, /Ratings and reviews are temporarily unavailable/);
+  assert.doesNotMatch(res.body, /id="reviewForm"/);
+});
