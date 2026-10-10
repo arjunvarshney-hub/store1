@@ -1,3 +1,5 @@
+> **Historical baseline note:** This file records the audit from before the customer-review branch and the SHRI JI Assistant/local layout changes. For current code and test evidence, read [`CURRENT_AUDIT.md`](CURRENT_AUDIT.md). Older test counts and notes in this file are historical, not a statement about the current working copy.
+
 # Audit of the uploaded project (before changes)
 
 | # | Severity | Finding | Status |

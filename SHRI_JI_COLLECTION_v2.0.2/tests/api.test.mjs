@@ -261,6 +261,86 @@ test("Vercel rewrites route admin review moderation to the existing admin dispat
   const config = JSON.parse(fs.readFileSync("vercel.json", "utf8"));
   const matches = config.rewrites.filter((r) => r.source === "/api/admin/reviews" && r.destination === "/api/admin?action=reviews");
   assert.equal(matches.length, 1, "review endpoint should have exactly one rewrite");
+  const assistants = config.rewrites.filter((r) => r.source === "/api/assistant" && r.destination === "/api/site?action=assistant");
+  assert.equal(assistants.length, 1, "assistant endpoint should reuse the existing site dispatcher exactly once");
+});
+
+test("SHRI JI Assistant reports AI readiness honestly and has a safe catalogue-only fallback", async () => {
+  const h = await load("../api/site.js");
+  const old = { enabled: process.env.AI_ASSISTANT_ENABLED, key: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL };
+  delete process.env.OPENAI_API_KEY; delete process.env.OPENAI_MODEL; process.env.AI_ASSISTANT_ENABLED = "true";
+  try {
+    const status = await call(h, { method: "GET", query: { action: "assistant" } });
+    assert.equal(status.statusCode, 200); assert.equal(status.body.enabled, true); assert.equal(status.body.aiConfigured, false); assert.equal(status.body.mode, "catalog");
+
+    fake.resolve = (table) => table === "products" ? ({ data: [{ id: 12, slug: "red-laddu-poshak", name: "Red Laddu Gopal Poshak", category: "laddu-gopal-poshak", price: 599, sale_price: 449, description: "Red velvet poshak", material: "Velvet", sizes: ["1", "2"], image_urls: ["https://abc.supabase.co/storage/v1/object/public/product-images/red.jpg"], stock: 3 }], count: 1, error: null }) : ({ data: null, error: null });
+    const reply = await call(h, { method: "POST", headers: { ...same, "content-type": "application/json" }, query: { action: "assistant" }, body: { message: "Show Laddu Gopal Poshak under ₹500" } });
+    assert.equal(reply.statusCode, 200); assert.equal(reply.body.mode, "catalog");
+    assert.equal(reply.body.products.length, 1); assert.equal(reply.body.products[0].currentPrice, 449); assert.equal(reply.body.products[0].inStock, true);
+    assert.match(reply.body.reply, /Live AI isn't configured yet/);
+    assert.doesNotMatch(JSON.stringify(reply.body), /SERVICE_ROLE|OPENAI_API_KEY/);
+
+    const invalid = await call(h, { method: "POST", headers: same, query: { action: "assistant" }, body: { message: " " } });
+    assert.equal(invalid.statusCode, 400);
+  } finally {
+    if (old.enabled === undefined) delete process.env.AI_ASSISTANT_ENABLED; else process.env.AI_ASSISTANT_ENABLED = old.enabled;
+    if (old.key === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = old.key;
+    if (old.model === undefined) delete process.env.OPENAI_MODEL; else process.env.OPENAI_MODEL = old.model;
+  }
+});
+
+test("SHRI JI Assistant does not invent availability when the catalogue is unavailable", async () => {
+  const h = await load("../api/site.js");
+  const old = { enabled: process.env.AI_ASSISTANT_ENABLED, key: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL };
+  process.env.AI_ASSISTANT_ENABLED = "true"; delete process.env.OPENAI_API_KEY; delete process.env.OPENAI_MODEL;
+  fake.resolve = (table) => table === "products" ? ({ data: null, error: { message: "catalogue connection unavailable" } }) : ({ data: null, error: null });
+  try {
+    const result = await call(h, { method: "POST", headers: same, query: { action: "assistant" }, body: { message: "Do you have a red kurti?" } });
+    assert.equal(result.statusCode, 200); assert.equal(result.body.mode, "catalog");
+    assert.match(result.body.reply, /can't access the shop catalogue/i);
+    assert.deepEqual(result.body.products, []);
+  } finally {
+    if (old.enabled === undefined) delete process.env.AI_ASSISTANT_ENABLED; else process.env.AI_ASSISTANT_ENABLED = old.enabled;
+    if (old.key === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = old.key;
+    if (old.model === undefined) delete process.env.OPENAI_MODEL; else process.env.OPENAI_MODEL = old.model;
+  }
+});
+
+test("SHRI JI Assistant calls the server-side Responses API only when configured", async () => {
+  const h = await load("../api/site.js");
+  const old = { enabled: process.env.AI_ASSISTANT_ENABLED, key: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL };
+  const realFetch = globalThis.fetch; let request;
+  process.env.AI_ASSISTANT_ENABLED = "true"; process.env.OPENAI_API_KEY = "test-only-server-key"; process.env.OPENAI_MODEL = "test-model";
+  fake.resolve = (table) => table === "products" ? ({ data: [{ id: 12, slug: "red-laddu-poshak", name: "Red Laddu Gopal Poshak", category: "laddu-gopal-poshak", price: 599, sale_price: 449, material: "Velvet", sizes: ["1"], image_urls: [], stock: 2 }], count: 1, error: null }) : ({ data: null, error: null });
+  globalThis.fetch = async (url, init) => {
+    request = { url: String(url), init, body: JSON.parse(init.body) };
+    return { ok: true, json: async () => ({ output: [{ type: "message", content: [{ type: "output_text", text: "Namaste! I found the current red poshak listing below." }] }] }) };
+  };
+  try {
+    const result = await call(h, { method: "POST", headers: { ...same, "content-type": "application/json" }, query: { action: "assistant" }, body: { message: "Show Laddu Gopal Poshak under ₹500" } });
+    assert.equal(result.statusCode, 200); assert.equal(result.body.mode, "ai");
+    assert.equal(request.url, "https://api.openai.com/v1/responses");
+    assert.equal(request.init.headers.Authorization, "Bearer test-only-server-key");
+    assert.equal(request.body.model, "test-model"); assert.equal(request.body.store, false);
+    assert.doesNotMatch(JSON.stringify(result.body), /test-only-server-key|OPENAI_API_KEY/);
+    assert.equal(result.body.products[0].currentPrice, 449);
+  } finally {
+    globalThis.fetch = realFetch;
+    if (old.enabled === undefined) delete process.env.AI_ASSISTANT_ENABLED; else process.env.AI_ASSISTANT_ENABLED = old.enabled;
+    if (old.key === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = old.key;
+    if (old.model === undefined) delete process.env.OPENAI_MODEL; else process.env.OPENAI_MODEL = old.model;
+  }
+});
+
+test("SHRI JI Assistant can be disabled by server configuration", async () => {
+  const h = await load("../api/site.js");
+  const old = process.env.AI_ASSISTANT_ENABLED; process.env.AI_ASSISTANT_ENABLED = "false";
+  try {
+    const status = await call(h, { method: "GET", query: { action: "assistant" } });
+    assert.equal(status.statusCode, 200); assert.equal(status.body.enabled, false);
+    const response = await call(h, { method: "POST", headers: same, query: { action: "assistant" }, body: { message: "hello" } });
+    assert.equal(response.statusCode, 503);
+  } finally { if (old === undefined) delete process.env.AI_ASSISTANT_ENABLED; else process.env.AI_ASSISTANT_ENABLED = old; }
 });
 
 test("product SSR remains available when the optional reviews migration has not been applied", async () => {

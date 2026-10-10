@@ -99,6 +99,10 @@
     {
       "source": "/api/site-settings",
       "destination": "/api/site?action=settings"
+    },
+    {
+      "source": "/api/assistant",
+      "destination": "/api/site?action=assistant"
     }
   ],
   "crons": [
