@@ -77,16 +77,54 @@ ${cat || grp ? `<p class="seo muted sm">Buy ${esc(name)} online from ${BRAND}, S
   });
 }
 
-export function productPage(site, p, related, settings = {}) {
+const starsHtml = (rating) => {
+  const n = Math.max(0, Math.min(5, Math.round(Number(rating) || 0)));
+  return `<span class="stars" role="img" aria-label="${n} out of 5 stars">${"★".repeat(n)}${"☆".repeat(5 - n)}</span>`;
+};
+
+function reviewSection(data = {}) {
+  const reviews = Array.isArray(data.reviews) ? data.reviews : [];
+  const summary = data.summary || { count: 0, average: null };
+  const count = Math.max(0, Number(summary.count || 0));
+  const average = summary.average == null ? null : Number(summary.average);
+  const intro = !data.configured
+    ? "Customer ratings and reviews are not available right now. Please check back soon."
+    : count > 0
+      ? `${count} customer ${count === 1 ? "review" : "reviews"}`
+      : "No reviews yet. Be the first to share your experience.";
+  const cards = reviews.map((r) => {
+    const date = r.created_at && Number.isFinite(Date.parse(r.created_at))
+      ? new Date(r.created_at).toLocaleDateString("en-IN", { dateStyle: "medium" }) : "";
+    return `<article class="review-card"><div class="review-head"><b>${esc(r.customer_name)}</b><time class="muted sm"${date ? ` datetime="${esc(new Date(r.created_at).toISOString())}"` : ""}>${esc(date)}</time></div><div class="review-rating">${starsHtml(r.rating)} <span class="sm">${Number(r.rating)}/5</span></div><p>${esc(r.comment).replace(/\n/g, "<br>")}</p></article>`;
+  }).join("");
+  const form = data.configured ? `<form id="reviewForm" class="review-form" novalidate>
+    <h3>Write a review</h3><p class="sm muted">Tell other customers about your experience. Reviews are checked by our shop before appearing publicly.</p>
+    <label class="f">Your name *<input name="name" autocomplete="name" maxlength="80" minlength="2" required placeholder="Enter your name"></label>
+    <fieldset class="rating-field"><legend>Your rating *</legend><div class="rating-pick">${[1,2,3,4,5].map((n) => `<label><input type="radio" name="rating" value="${n}" required><span aria-hidden="true">★</span><span class="sr-only">${n} ${n === 1 ? "star" : "stars"}</span></label>`).join("")}</div></fieldset>
+    <label class="f">Your review *<textarea name="comment" required minlength="5" maxlength="1000" placeholder="What did you like or what could be better? (5–1,000 characters)"></textarea></label>
+    <div class="review-trap" aria-hidden="true"><label>Leave this field empty<input name="website" tabindex="-1" autocomplete="off"></label></div>
+    <div id="reviewMsg" aria-live="polite"></div><button class="btn primary" id="reviewSubmit" type="submit">Submit review</button>
+  </form>` : `<div class="note" role="status">Ratings and reviews are temporarily unavailable. Please check back soon.</div>`;
+  return `<section class="reviews-sec" id="reviews" aria-labelledby="reviewsTitle"><div class="reviews-title"><div><p class="eyebrow dark">Customer feedback</p><h2 class="h2" id="reviewsTitle">Ratings &amp; reviews</h2></div>${count > 0 && average !== null ? `<div class="rating-total">${starsHtml(average)} <b>${average.toFixed(1)}/5</b><span class="sm muted">${count} ${count === 1 ? "review" : "reviews"}</span></div>` : ""}</div><p class="muted sm">${esc(intro)}</p><div class="review-list">${cards || (data.configured ? '<p class="empty">No approved reviews to show yet.</p>' : "")}</div>${form}</section>`;
+}
+
+export function productPage(site, p, related, settings = {}, reviewData = { configured: false, reviews: [], summary: null }) {
   const cat = bySlug[p.category];
   const url = `${site}/product/${p.slug}`;
   const imgs = (p.image_urls || []).filter(safeUrl);
   const soldOut = Number(p.stock) <= 0;
   const sizes = p.sizes || [];
+  const summary = reviewData.summary || { count: Number(p.review_count || 0), average: p.average_rating ?? null };
+  const reviewCount = Math.max(0, Number(summary.count || 0));
+  const avg = summary.average == null ? null : Number(summary.average);
+  const ratingLine = reviewData.configured && reviewCount > 0 && avg !== null
+    ? `<div class="product-rating">${starsHtml(avg)} <b>${avg.toFixed(1)}</b><span class="muted sm">(${reviewCount} ${reviewCount === 1 ? "review" : "reviews"})</span><a href="#reviews">Read reviews</a></div>`
+    : reviewData.configured ? `<div class="product-rating">${starsHtml(0)} <span class="muted sm">No reviews yet</span><a href="#reviews">Be the first to review</a></div>`
+      : `<div class="product-rating"><span class="muted sm">Customer ratings coming soon</span></div>`;
   const gallery = `<div class="gal"><div class="gal-main" id="galMain">${imgs[0] ? imgTag(imgs[0], `${p.name} - ${catName(p.category)}`, { eager: true, w: 800, h: 800 }) : imgTag("", p.name)}</div>${imgs.length > 1 ? `<div class="gal-th" role="list">${imgs.map((u, i) => `<button type="button" class="th${i ? "" : " on"}" role="listitem" data-src="${esc(u)}" aria-label="Photo ${i + 1}">${imgTag(u, `${p.name} photo ${i + 1}`, { w: 80, h: 80 })}</button>`).join("")}</div>` : ""}</div>`;
   const body = `<div class="wrap sec"><nav class="crumb" aria-label="Breadcrumb"><a href="/">Home</a> / ${cat ? `<a href="/category/${cat.slug}">${esc(cat.name)}</a> / ` : ""}<span>${esc(p.name)}</span></nav>
 <div class="pdp" id="pdp" data-id="${p.id}" data-stock="${Number(p.stock) || 0}" data-name="${esc(p.name)}">${gallery}
-<div class="pdp-info"><h1 class="h1">${esc(p.name)}</h1>
+<div class="pdp-info"><h1 class="h1">${esc(p.name)}</h1>${ratingLine}
 <div class="price big"><b>${money(effPrice(p))}</b>${onSale(p) ? ` <s>${money(p.price)}</s> <span class="off">${pctOff(p)}% off</span>` : ""}</div>
 <p class="sm muted">Inclusive of all taxes. Delivery charges, if any, are shown at checkout.</p>
 ${sizes.length ? `<fieldset class="sizes"><legend>Select size</legend>${sizes.map((s) => `<label class="sz"><input type="radio" name="size" value="${esc(s)}"><span>${esc(s)}</span></label>`).join("")}</fieldset>` : ""}
@@ -95,15 +133,22 @@ ${soldOut ? '<p class="soldout">This product is currently sold out.</p>' : `<div
 <dl class="spec">${cat ? `<div><dt>Category</dt><dd><a href="/category/${cat.slug}">${esc(cat.name)}</a></dd></div>` : ""}${p.material ? `<div><dt>Material</dt><dd>${esc(p.material)}</dd></div>` : ""}${sizes.length ? `<div><dt>Sizes</dt><dd>${esc(sizes.join(", "))}</dd></div>` : ""}</dl>
 ${p.description ? `<div class="desc"><h2>Details</h2><p>${esc(p.description).replace(/\n/g, "<br>")}</p></div>` : ""}
 <p class="sm muted">Questions? <a href="https://wa.me/919927892667" target="_blank" rel="noopener">WhatsApp us</a> or call <a href="tel:+919927892667">9927892667</a>.</p></div></div>
+${reviewSection(reviewData)}
 ${related.length ? `<section class="sec"><h2 class="h2">You may also like</h2><div class="grid">${related.map(cardHtml).join("")}</div></section>` : ""}</div>
 <script type="module" src="/js/product.js"></script>`;
   const title = `${p.name} - Buy Online | ${BRAND}`;
   const desc = (p.description ? p.description.replace(/\s+/g, " ").slice(0, 140) + " - " : "") + `${catName(p.category)} at ${BRAND}, Sarai Tareen Sambhal. ${money(effPrice(p))}.`;
+  const productJsonLd = {
+    "@context": "https://schema.org", "@type": "Product", name: p.name, sku: String(p.id), category: catName(p.category), ...(imgs.length ? { image: imgs } : {}), ...(p.description ? { description: p.description.slice(0, 500) } : {}), ...(p.material ? { material: p.material } : {}), brand: { "@type": "Brand", name: BRAND },
+    offers: { "@type": "Offer", url, priceCurrency: "INR", price: effPrice(p).toFixed(2), availability: soldOut ? "https://schema.org/OutOfStock" : "https://schema.org/InStock", itemCondition: "https://schema.org/NewCondition", seller: { "@type": "Organization", name: BRAND } },
+    ...(reviewData.configured && reviewCount > 0 && avg !== null ? {
+      aggregateRating: { "@type": "AggregateRating", ratingValue: avg.toFixed(1), reviewCount: String(reviewCount), bestRating: "5", worstRating: "1" },
+      review: reviewData.reviews.map((r) => ({ "@type": "Review", author: { "@type": "Person", name: r.customer_name }, reviewRating: { "@type": "Rating", ratingValue: Number(r.rating), bestRating: "5", worstRating: "1" }, reviewBody: r.comment, ...(Number.isFinite(Date.parse(r.created_at || "")) ? { datePublished: new Date(r.created_at).toISOString().slice(0, 10) } : {}) })),
+    } : {}),
+  };
   return shell({
     settings, title, desc: desc.slice(0, 160), canonical: url, body, image: imgs[0], ogType: "product",
-    jsonld: [
-      { "@context": "https://schema.org", "@type": "Product", name: p.name, sku: String(p.id), category: catName(p.category), ...(imgs.length ? { image: imgs } : {}), ...(p.description ? { description: p.description.slice(0, 500) } : {}), ...(p.material ? { material: p.material } : {}), brand: { "@type": "Brand", name: BRAND },
-        offers: { "@type": "Offer", url, priceCurrency: "INR", price: effPrice(p).toFixed(2), availability: soldOut ? "https://schema.org/OutOfStock" : "https://schema.org/InStock", itemCondition: "https://schema.org/NewCondition", seller: { "@type": "Organization", name: BRAND } } },
+    jsonld: [productJsonLd,
       crumbs(site, [["Home", "/"], ...(cat ? [[cat.name, "/category/" + cat.slug]] : []), [p.name, "/product/" + p.slug]]),
     ],
   });

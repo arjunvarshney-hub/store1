@@ -1,6 +1,6 @@
 // Server-rendered public pages (home, shop, category, product) so Google and slow phones get real HTML.
 import { siteUrl } from "./_lib.js";
-import { queryProducts, getSettings } from "./_catalog.js";
+import { queryProducts, getSettings, getProductReviewData } from "./_catalog.js";
 import { homePage, listingPage, productPage, notFoundPage } from "./_layout.js";
 import { bySlug, groupBySlug } from "../public/js/categories.js";
 
@@ -22,7 +22,8 @@ export default async function handler(req, res) {
       const p = products[0];
       if (!p) return send(404, notFoundPage(site, "Product", settings));
       const rel = (await queryProducts({ category: p.category, limit: 5 })).products.filter((x) => x.id !== p.id).slice(0, 4);
-      return send(200, productPage(site, p, rel, settings));
+      const reviewData = await getProductReviewData(Number(p.id));
+      return send(200, productPage(site, p, rel, settings, reviewData));
     }
     if (type === "category" || type === "shop") {
       const category = type === "category" && bySlug[slug] ? slug : undefined;

@@ -23,11 +23,16 @@ export function cardHtml(p) {
   const href = "/product/" + encodeURIComponent(p.slug);
   const off = pctOff(p);
   const out = Number(p.stock) <= 0;
+  const count = Math.max(0, Number(p.review_count || 0));
+  const average = p.average_rating == null ? NaN : Number(p.average_rating);
+  const rating = count > 0 && Number.isFinite(average)
+    ? `<div class="rating-mini"><span class="stars" role="img" aria-label="${average.toFixed(1)} out of 5 stars">${"★".repeat(Math.max(0, Math.min(5, Math.round(average))))}${"☆".repeat(5 - Math.max(0, Math.min(5, Math.round(average))))}</span><span>${average.toFixed(1)} · ${count} ${count === 1 ? "review" : "reviews"}</span></div>`
+    : p.reviews_enabled ? '<div class="rating-mini muted">☆ No reviews yet</div>' : '<div class="rating-mini muted">Ratings coming soon</div>';
   return `<article class="card"><a class="card-img" href="${href}" aria-label="${esc(p.name)}">${imgTag(p.image_urls?.[0], `${p.name} - ${catName(p.category)}`)}${
     out ? '<span class="tag tag-out">Sold out</span>' : off ? `<span class="tag">${off}% OFF</span>` : ""
   }</a><div class="card-body"><a class="card-title" href="${href}">${esc(p.name)}</a><div class="price"><b>${money(effPrice(p))}</b>${
     onSale(p) ? ` <s>${money(p.price)}</s>` : ""
-  }</div><div class="muted sm">${esc(catName(p.category))}</div></div></article>`;
+  }</div>${rating}<div class="muted sm">${esc(catName(p.category))}</div></div></article>`;
 }
 
 const I = {

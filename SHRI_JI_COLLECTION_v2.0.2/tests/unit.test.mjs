@@ -86,3 +86,23 @@ test("SSR listing/home: canonical, noindex on search, product links", () => {
   assert.ok(h.includes("ClothingStore") && h.includes("Sarai Tareen") && h.includes("244303"));
   assert.ok(cardHtml(prod).includes("/product/red-poshak-7"));
 });
+
+test("product ratings: real averages render on cards; no reviews are not fabricated", () => {
+  const rated = cardHtml({ ...prod, review_count: 3, average_rating: 4.7 });
+  assert.match(rated, /4\.7/); assert.match(rated, /3 reviews/); assert.match(rated, /★/);
+  const unrated = cardHtml({ ...prod, reviews_enabled: true, review_count: 0, average_rating: null });
+  assert.match(unrated, /No reviews yet/); assert.doesNotMatch(unrated, /0\.0/);
+  assert.match(cardHtml({ ...prod, reviews_enabled: false, review_count: 0 }), /Ratings coming soon/);
+});
+
+test("SSR reviews: approved customer text is escaped and only real aggregates enter Product JSON-LD", () => {
+  const reviews = [{ id: 1, product_id: 7, customer_name: "Neha <script>alert(1)</script>", rating: 5, comment: "Beautiful product <img src=x onerror=alert(1)>", created_at: "2026-10-09T10:00:00.000Z" }];
+  const html = productPage("https://shop.test", prod, [], {}, { configured: true, reviews, summary: { count: 1, average: 5 } });
+  assert.ok(html.includes("Ratings &amp; reviews")); assert.ok(html.includes("Write a review"));
+  assert.ok(!html.includes("<script>alert(1)</script>")); assert.ok(!html.includes('<img src=x onerror=alert(1)>'));
+  assert.ok(html.includes("&lt;script&gt;alert(1)&lt;/script&gt;"));
+  const ld = [...html.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/gs)].map((m) => JSON.parse(m[1]));
+  const p = ld.find((x) => x["@type"] === "Product");
+  assert.equal(p.aggregateRating.ratingValue, "5.0"); assert.equal(p.aggregateRating.reviewCount, "1");
+  assert.equal(p.review[0].reviewRating.ratingValue, 5);
+});
