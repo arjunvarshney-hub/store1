@@ -5,7 +5,7 @@ process.env.SJC_TEST_DB = "1"; process.env.SUPABASE_URL = "https://abc.supabase.
 process.env.RAZORPAY_KEY_ID = "rzp_test_e2e"; process.env.RAZORPAY_KEY_SECRET = "e2e_secret"; process.env.RAZORPAY_WEBHOOK_SECRET = "e2e_wh";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const CONFIRM = process.env.CONFIRM === "1";
-const db = { products: [], orders: [], profiles: [], admin_users: [], payment_events: [] }; let seq = { products: 0, orders: 0 };
+const db = { products: [], orders: [], profiles: [], admin_users: [], payment_events: [], site_settings: [], product_reviews: [] }; let seq = { products: 0, orders: 0, product_reviews: 0 };
 const users = []; const sessions = {};
 const slugify = (n, id) => (n.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "item") + "-" + id;
 const eqv = (a, b) => (a === null || a === undefined ? b === null || b === undefined : String(a) === String(b));
@@ -13,10 +13,10 @@ const ilike = (v, pat) => new RegExp("^" + pat.replace(/[.*+?^${}()|[\]\\]/g, "\
 
 function run(table, ops, single) {
   let rows = db[table]; if (!rows) return { data: null, error: { message: "no table " + table } };
-  let mode = "select", payload, order, range, lim, wantCount = false, selected = false; const filters = [];
+  let upsertKey, mode = "select", payload, order, range, lim, wantCount = false, selected = false; const filters = [];
   for (const [op, a] of ops) {
     if (op === "select") { selected = true; if (a[1]?.count) wantCount = true; }
-    else if (["insert", "update", "upsert"].includes(op)) { mode = op; payload = a[0]; }
+    else if (["insert", "update", "upsert"].includes(op)) { mode = op; payload = a[0]; if (op === "upsert") upsertKey = a[1]?.onConflict; }
     else if (op === "delete") mode = "delete";
     else if (op === "eq") filters.push((r) => eqv(r[a[0]], a[1]));
     else if (op === "in") filters.push((r) => a[1].map(String).includes(String(r[a[0]])));
@@ -30,7 +30,7 @@ function run(table, ops, single) {
     const arr = [].concat(payload).map((p) => { const id = ++seq[table]; const r = { id, created_at: new Date().toISOString(), active: true, sizes: [], image_urls: [], stock: 0, sale_price: null, ...p }; if (table === "products") r.slug = slugify(r.name, id); r.updated_at = r.created_at; db[table].push(r); return r; });
     return { data: single ? arr[0] : selected ? arr : null, error: null };
   }
-  if (mode === "upsert") { const k = Object.keys(payload)[0]; if (!db[table].some((r) => eqv(r[k], payload[k]))) db[table].push({ ...payload }); return { data: null, error: null }; }
+  if (mode === "upsert") { const pk = upsertKey || Object.keys([].concat(payload)[0])[0]; for (const row of [].concat(payload)) { const ex = db[table].find((r) => eqv(r[pk], row[pk])); if (ex) Object.assign(ex, row); else db[table].push({ ...row }); } return { data: null, error: null }; }
   let out = rows.filter(match);
   if (mode === "update") { out.forEach((r) => Object.assign(r, payload)); return { data: single ? out[0] ?? null : selected ? out : null, error: null }; }
   if (mode === "delete") { db[table] = rows.filter((r) => !match(r)); return { data: null, error: null }; }
@@ -56,6 +56,7 @@ const setStatus = (num, status, user) => {
   return o;
 };
 const rpcs = {
+  get_product_review_summary: ({ p_product_ids }) => p_product_ids.map((id) => { const r = db.product_reviews.filter((x) => x.product_id === id && x.status === "approved"); return r.length ? { product_id: id, review_count: r.length, average_rating: Math.round((r.reduce((n, x) => n + x.rating, 0) / r.length) * 10) / 10 } : null; }).filter(Boolean),
   create_order: ({ p_user, p_customer, p_items, p_method, p_key, p_shipping_flat, p_free_above }) => {
     const ex = p_key && db.orders.find((o) => o.user_id === p_user && o.idempotency_key === p_key); if (ex) return { existing: true, order: ex };
     const need = {}; p_items.forEach((i) => (need[i.productId] = (need[i.productId] || 0) + i.qty));
@@ -86,7 +87,7 @@ globalThis.__SJC_TEST_DB__ = {
 };
 // Razorpay REST stub
 const realFetch = globalThis.fetch; let rz = 0;
-globalThis.fetch = async (u, i) => (String(u).startsWith("https://api.razorpay.com/v1/orders") ? { ok: true, json: async () => ({ id: "order_E2E" + ++rz + "ABCDEF" }) } : realFetch(u, i));
+globalThis.fetch = async (u, i) => String(u).startsWith("https://api.anthropic.com/") ? { ok: true, json: async () => ({ content: [{ type: "text", text: "AI-MOCK: here are some options from our store." }] }) } : (String(u).startsWith("https://api.razorpay.com/v1/orders") ? { ok: true, json: async () => ({ id: "order_E2E" + ++rz + "ABCDEF" }) } : realFetch(u, i));
 
 // ---- HTTP server mirroring vercel.json ----
 const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, "vercel.json"), "utf8"));
@@ -96,8 +97,10 @@ const getH = async (name) => (handlers[name] ??= await import(pathToFileURL(path
 http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost"); let p = url.pathname; const query = Object.fromEntries(url.searchParams);
   if (p === "/__admin_grant") { const u = users.find((x) => x.email === query.email); db.admin_users.push({ user_id: u.id }); return res.end("ok"); }
+  if (p === "/__seed") { const rows = [["Red Velvet Laddu Gopal Poshak","laddu-gopal-poshak",650,499,["1","2","3"]],["Pink Krishna Poshak Set","krishna-poshak",850,null,["2","3","4"]],["Gold Mukut","mukut",350,299,[]],["Cotton Printed Kurti","kurti",799,null,["S","M","L","XL"]],["Embroidered Suit Set","suit",1450,1199,["M","L","XL"]],["Chanderi Dupatta","dupatta",450,null,[]],["Designer Maxi","maxi",1299,null,["M","L"]],["Moti Mala","mala",199,null,[]]]; rows.forEach(([name,category,price,sale,sizes])=>{const id=++seq.products; db.products.push({id,created_at:new Date(Date.now()-id*1000).toISOString(),updated_at:new Date().toISOString(),active:true,name,category,price,sale_price:sale,sizes,image_urls:[],stock:5,slug:slugify(name,id),description:"Sample"});}); return res.end("ok"); }
+  if (p === "/__ai") { if (query.on === "1") { process.env.ANTHROPIC_API_KEY = "sk-e2e-key"; process.env.AI_MODEL = "e2e-model"; } else delete process.env.ANTHROPIC_API_KEY; return res.end("ok"); }
   if (p === "/__confirm") { users.forEach((u) => (u.confirmed = true)); return res.end("ok"); }
-  if (p === "/__state") { res.setHeader("Content-Type", "application/json"); return res.end(JSON.stringify({ products: db.products, orders: db.orders, files: db.__files })); }
+  if (p === "/__state") { res.setHeader("Content-Type", "application/json"); return res.end(JSON.stringify({ products: db.products, orders: db.orders, files: db.__files, settings: db.site_settings, reviews: db.product_reviews })); }
   if (p === "/__sign") { const s = crypto.createHmac("sha256", process.env.RAZORPAY_KEY_SECRET).update(query.order + "|" + query.pay).digest("hex"); return res.end(s); }
   for (const r of cfg.rewrites) { const re = new RegExp("^" + r.source.replace(/:(\w+)/g, "(?<$1>[^/]+)") + "$"); const m = p.match(re); if (m) { const d = new URL(r.destination.replace(/:(\w+)/g, (_, k) => m.groups[k]), "http://x"); p = d.pathname; d.searchParams.forEach((v, k) => (query[k] = v)); break; } }
   if (p.startsWith("/api/")) {

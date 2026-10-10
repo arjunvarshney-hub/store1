@@ -110,3 +110,26 @@ npx vercel dev      # run against your real Supabase (needs .env values)
 
 ## Known limitations
 See `CHANGELOG.md` → "Not done / needs live verification" and `AUDIT.md`.
+
+
+---
+
+## v3: SHRI JI Assistant, reviews and deployment notes
+
+**Repo layout:** in GitHub this project lives inside the folder `SHRI_JI_COLLECTION_v2.0.2/`. In Vercel set **Root Directory** to that folder.
+
+### Customer reviews (how it works)
+* Customers write a name, 1 to 5 stars and a comment on a product page. The review is **pending** and invisible until you approve it in **/admin → Reviews**.
+* Only approved reviews count in the stars, the average and the Google product data. Nothing is invented: a product with no approved reviews shows "No reviews yet".
+* Reviews are labelled "not purchase-verified".
+* Spam limits: a hidden trap field, a burst limit, and (after running `migrations/20261011_review_abuse_controls.sql`) 3 reviews per hour and 1 per product per day per visitor.
+* Run the review SQL files from `migrations/` once in the Supabase SQL Editor (order: `20261010_...`, then `20261011_...`).
+
+### SHRI JI Assistant (chat button)
+See `AI_ASSISTANT_SETUP.md`. In short: it works right away in "store answers" mode; add `ANTHROPIC_API_KEY` in Vercel to switch on live AI (live AI is untested). Manage it in **/admin → Site → SHRI JI Assistant**.
+
+### New optional environment variables (private)
+`ANTHROPIC_API_KEY`, `AI_MODEL`, `CHAT_DAILY_AI_LIMIT`, `RATE_LIMIT_SALT`. See `.env.example`.
+
+### Safe release routine
+Follow `DEPLOYMENT_CHECKLIST.md` (branch → Preview → test → merge). The honest audit of what is done and not done is in `CURRENT_AUDIT.md`.

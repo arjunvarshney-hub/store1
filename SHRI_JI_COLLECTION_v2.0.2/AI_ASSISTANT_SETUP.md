@@ -1,48 +1,62 @@
-# SHRI JI Assistant — setup and safety guide
+# SHRI JI Assistant: setup guide (simple English)
 
-## What is implemented in this project snapshot
+## What it is
+A chat button on the shop pages (home, shop, category, product). Customers can ask in English, Hindi or Hinglish:
+* "Laddu Gopal poshak dikhao", "kurti 500 tak", "red mukut", "size L kurti"
+* payment options, delivery charge, how to order, shop contact
 
-The storefront now includes a floating **SHRI JI Assistant** on the home, shop, category and product pages. It is intentionally hidden on cart, checkout, account and admin pages so it does not compete with payment or account actions.
+It shows **real products only** (name, current price, sold-out status, link) read live from your database.
+It does **not** appear on cart, checkout, account or admin pages (so it never distracts from buying).
 
-The server-side endpoint is routed through the existing `/api/site` dispatcher as `/api/assistant`; it does not add a separate top-level Vercel function. It reads active products from the existing public catalogue. Recommendations include current price, current stock, product URL and only real ratings where available.
+## What it can NOT do (by design)
+* It cannot see, change or cancel orders, change prices or stock, mark payments, or refund. It is read-only.
+* For order status it tells the customer to log in and open **My Orders**. It never looks up an order by number.
+* It does not promise delivery days or a return policy. If you have not written one in the admin, it says "not published, please ask the shop".
+* It does not save chats on the server. The chat is kept only in the customer's own browser tab until they close it.
 
-There are two modes:
+## Two modes
+| Mode | When | What the customer sees |
+|---|---|---|
+| **Store answers** (no AI) | No `ANTHROPIC_API_KEY` in Vercel, or the AI service is down, or the daily limit is reached | Real products + fixed answers + your own FAQ. Each message is labelled "Automatic answer from store information". It is never shown as AI. |
+| **AI replies** | `ANTHROPIC_API_KEY` is set and working | Natural replies in the customer's language. Product cards still come from your database. |
 
-- **AI mode:** enabled only when both `OPENAI_API_KEY` and `OPENAI_MODEL` are configured server-side. The server calls OpenAI's Responses API. The key is never sent to the browser.
-- **Catalogue fallback:** when the key/model is missing or the AI provider fails, the assistant says that live AI is not configured/unavailable and can still use simple product/category/budget matching. It must not claim that this fallback is an AI-generated answer.
+**Live AI has NOT been tested** (no key was available while building). Test it yourself with the checklist below.
 
-The assistant is read-only. It cannot change prices, inventory, order status, payment status, refund records or admin settings. It does not expose order details and redirects customers to the existing My Orders flow. Do not type passwords, payment secrets or private customer details into the chat.
+## Turn on live AI (optional)
+1. Create an account at the Anthropic Console and create an API key (this is your own paid account; set a monthly spend limit there).
+2. Vercel → your project → **Settings → Environment Variables** → add:
+   * `ANTHROPIC_API_KEY` = your key (mark as Sensitive). **Never paste the key in chat, GitHub or the admin panel.**
+   * `AI_MODEL` (optional) = the model name. Default is `claude-haiku-5-5` (small and cheap). Check the current name in Anthropic's docs; if a model is retired, change it here, no code change needed.
+3. **Redeploy** (Deployments → latest → ⋯ → Redeploy).
+4. Test (below).
 
-## Configure live AI in Vercel
+### Cost and limits
+* Each customer message = one small AI call (about 400 output tokens max). Typical cost is very small, but it is pay-per-use.
+* Limits built in: 500 characters per message; 12 messages per 5 minutes and 100 per day per visitor; `CHAT_DAILY_AI_LIMIT` AI replies per day per server instance (default 300), after that it quietly switches to Store answers.
+* These limits live in server memory, so they are a brake, not a perfect global cap. Set a spending limit in the Anthropic Console too.
 
-1. Open the correct Vercel project connected to this repository.
-2. Open **Settings → Environment Variables**.
-3. Add these variables for **Preview** first:
-   - `AI_ASSISTANT_ENABLED` = `true`
-   - `OPENAI_API_KEY` = your OpenAI API key (secret; server-side only)
-   - `OPENAI_MODEL` = an available model ID enabled for your API project
-4. Save the variables and redeploy the Preview deployment.
-5. Open the Preview site on a phone and desktop. Ask the same product question in English, Hindi and Hinglish; test a budget and out-of-stock question.
-6. Check the browser Network panel and built JavaScript to confirm the key is never present in responses or client files. Review Vercel function logs without printing request bodies or credentials.
-7. Only after Preview works and usage/cost limits have been considered should the same variables be added to Production. Do not enable billing or buy credits without the owner's explicit choice.
+## Manage it from the admin panel (no code)
+`/admin` → **Site** tab → **SHRI JI Assistant (chat)**
+* Tick / untick **Show the chat assistant on the shop** (off = button disappears and the API refuses).
+* **Your answers**: one per line as `Question | Answer`, up to 30. Examples:
+  * `Shop timing? | We are open 10 AM to 8 PM every day.`
+  * `Do you accept returns? | (write your real policy here)`
+  Only write facts that are true. Your answers are used word for word and beat the built-in ones.
 
-**Never put `OPENAI_API_KEY` in `public/`, HTML, client JavaScript, a `NEXT_PUBLIC_`/public variable, Supabase public settings, GitHub commits, screenshots or this file. Never paste it into ChatGPT.**
+## Privacy and safety
+* The AI key stays on the server. It is never in the website files or in any response.
+* Product text and your FAQ are treated as **untrusted data**: the assistant is told never to follow instructions found inside them.
+* Server logs contain only error codes, never customer messages or keys.
+* Visitors are identified for rate limits only by a one-way hash (never the raw IP).
 
-If `OPENAI_API_KEY` or `OPENAI_MODEL` is absent, the endpoint deliberately stays in catalogue-only mode. If the provider is configured but times out/errors, the user sees a transparent fallback message. A real AI interaction cannot be verified until an authorized server-side key/model is configured and a Preview transaction is tested.
+## Test checklist after adding the key
+1. Open the shop on your phone, tap **Ask us**, ask "kurti dikhao". You should get a natural reply **and** product cards. The reply must NOT carry the grey label "Automatic answer from store information".
+2. Ask for a sold-out product. It must say sold out.
+3. Ask "return policy?". It must say it is not published (unless you wrote one).
+4. Ask "mera order kahan hai". It must send you to My Orders.
+5. In Vercel → Logs, check there are no `[assistant] provider failed` lines. If there are, the key or model name is wrong; the shop keeps working in Store answers mode meanwhile.
 
-## Model/provider documentation and costs
-
-The integration uses OpenAI's server-side **Responses API** with `store: false`, a short prompt, a 12-second timeout and a low output-token limit. Check the current official documentation and the models enabled in your own API project before choosing `OPENAI_MODEL`:
-
-- API method: https://developers.openai.com/api/reference/resources/responses/methods/create
-- Model list: https://developers.openai.com/api/docs/models
-
-API usage may incur charges according to the model and current account pricing. This project does not create an account, enable billing or buy credits on the owner's behalf. Select an appropriate model and set account usage limits/alerts at the provider where available.
-
-## Known limitations and operational notes
-
-- The rate limiter currently uses per-runtime in-memory counters. It helps with short bursts but is **not a durable/distributed rate limit** across serverless instances and may reset on cold starts. Before substantial public traffic, add an approved durable rate limiter (or platform-level rate protection). Do not mistake the in-memory control for production-grade abuse prevention.
-- The bot uses current public product rows as catalogue context, but a language model can still make mistakes. The product cards are tied to current server data; customers must verify exact variant and final total on the product page/checkout.
-- This snapshot does not add an admin screen for editing chatbot FAQ content. Toggle the assistant with `AI_ASSISTANT_ENABLED`; provider credentials remain server-side environment variables. Published return/refund/guaranteed-delivery policies must be supplied and verified before the bot can answer them specifically.
-- Order tracking deliberately does not look up records from the chat. Customers should use the existing signed-in **My Orders** flow.
-- No real provider key was supplied for this build, so live AI responses are `NOT TESTABLE` in this environment.
+## For developers
+* Code: `api/_assistant.js` (logic), `api/_routes/site/chat.js` (route, dispatched by `api/site.js`; rewrite `/api/chat`), `public/js/chat.js` (widget).
+* No new serverless function and no new database table: settings live in the existing `site_settings` table (`chat_enabled`, `chat_faq`).
+* Provider adapter is `callProvider()` in `_assistant.js`; swap it to change AI vendor.

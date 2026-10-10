@@ -30,7 +30,7 @@ fetch('/__sign?order='+o.order_id+'&pay='+pay).then(r=>r.text()).then(function(s
     c=newctx(); pg=c.new_page(); errs=[]; pg.on("pageerror", lambda e: errs.append(str(e))); pg.on("console", lambda m: errs.append(m.text) if m.type=="error" else None)
     pg.goto(B+"/"); overflow(pg,"home (empty catalogue)"); shot(pg,"01_home_empty")
     rec("home shows friendly empty state", "coming soon" in pg.content())
-    pg.click("#menuBtn"); rec("mobile menu opens", pg.is_visible("#menuPanel")); shot(pg,"02_menu"); pg.click("#menuBtn")
+    pg.click("#menuBtn"); rec("mobile menu opens as a drawer over the page (page does not move)", pg.is_visible("#menuPanel") and pg.evaluate("document.querySelector('.hero').getBoundingClientRect().top")<400); shot(pg,"02_menu"); pg.click("#menuClose"); rec("menu closes", not pg.is_visible("#menuPanel") and pg.evaluate("document.body.style.overflow")=="")
 
     # ---------- customer signup / login ----------
     pg.goto(B+"/account"); pg.click("text=Create account")
@@ -140,6 +140,84 @@ fetch('/__sign?order='+o.order_id+'&pay='+pay).then(r=>r.text()).then(function(s
     rec("admin edit product", state()["products"][0]["price"]==700)
     ad.uncheck("[data-act=toggle]"); ad.wait_for_timeout(800); rec("admin hides product → disappears from shop", state()["products"][0]["active"] is False and "Red Velvet" not in get("/shop"))
     ad.once("dialog", lambda d: d.accept()); ad.click("[data-act=del]"); ad.wait_for_timeout(800); rec("admin deletes product", len(state()["products"])==0)
+
+    # ---------- site settings: logo + home picture ----------
+    ad.goto(B+"/admin"); ad.wait_for_selector("[data-t=site]"); ad.click("[data-t=site]"); ad.wait_for_selector("#f_logo_url"); overflow(ad,"admin site tab")
+    rec("Site tab has logo + home picture uploaders", ad.locator("#f_hero_url").count()==1)
+    ad.set_input_files("#f_logo_url","/tmp/fx/logo.png"); ad.set_input_files("#f_hero_url","/tmp/fx/a.jpg"); ad.wait_for_selector("#pv_logo_url img"); ad.wait_for_selector("#pv_hero_url img"); shot(ad,"16_admin_site")
+    rec("logo + hero previews shown before saving", True)
+    ad.click("#saveSite"); ad.wait_for_selector("text=Saved"); S={r["key"]:r["value"] for r in state()["settings"]}
+    rec("logo and hero saved in DB (our storage URLs)", S.get("logo_url","").endswith(".png") and S.get("hero_url","").endswith(".jpg"), str(list(S)))
+    home=get("/"); rec("home page header shows the uploaded logo (server-rendered)", 'class="logo-img"' in home and S["logo_url"] in home)
+    rec("home page shows uploaded hero picture instead of SJC card", 'hero-art has-img' in home and S["hero_url"] in home and "SJC" not in home.split("hero-art")[1][:200])
+    rec("category + product pages also show the logo", 'class="logo-img"' in get("/shop"))
+    pg.goto(B+"/"); pg.wait_for_selector(".logo-img"); shot(pg,"17_home_logo"); overflow(pg,"home with logo + hero")
+    pg.goto(B+"/cart"); pg.wait_for_selector(".logo-img", timeout=6000); rec("static pages (cart) show the logo too", True)
+    r=pg.evaluate("fetch('/api/admin/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({logo_url:'https://evil.example/x.png'})}).then(r=>r.status)"); rec("customer cannot change site settings (403)", r==403, str(r))
+    r=ad.evaluate("fetch('/api/admin/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({logo_url:'https://evil.example/x.png'})}).then(r=>r.status)"); rec("admin cannot set a logo from another website (400)", r==400, str(r))
+    ad.click("#rm_logo_url"); ad.click("#rm_hero_url"); ad.click("#saveSite"); ad.wait_for_selector("text=Saved"); home=get("/")
+    rec("removing pictures restores text logo + SJC card", 'class="logo-img"' not in home and "SJC" in home)
+
+    # ---------- reviews end to end ----------
+    urllib.request.urlopen(B+"/__seed"); prods=state()["products"]; kurti=[p for p in prods if p["category"]=="kurti"][0]
+    pg.goto(B+"/product/"+kurti["slug"]); pg.wait_for_selector("#reviewForm")
+    rec("review section says reviews are NOT purchase-verified", "not purchase-verified" in pg.content())
+    rec("no fake stars: product with no reviews says 'No reviews yet'", "No reviews yet" in pg.content() and "aggregateRating" not in pg.content())
+    pg.click("#reviewSubmit"); rec("review form validates empty input", "name" in pg.inner_text("#reviewMsg").lower())
+    pg.fill("input[name=name]","Asha"); pg.click(".rating-pick label >> nth=4"); pg.fill("textarea[name=comment]","Lovely fabric <b>great</b> fit"); overflow(pg,"product page with review form"); shot(pg,"18_review_form")
+    pg.click("#reviewSubmit"); pg.wait_for_selector("#reviewMsg .msg.ok", timeout=8000)
+    rec("review saved as PENDING (not public yet)", [r["status"] for r in state()["reviews"]]==["pending"] and "Lovely fabric" not in get("/product/"+kurti["slug"]))
+    r=pg.evaluate(f"fetch('/api/products?action=reviews',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{productId:{kurti['id']},name:'Asha',rating:4,comment:'Second try same product'}})}}).then(r=>r.status)"); rec("same visitor cannot review the same product again (429)", r==429, str(r))
+    codes=[pg.evaluate(f"fetch('/api/products?action=reviews',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{productId:{p['id']},name:'Asha',rating:5,comment:'Nice item thank you'}})}}).then(r=>r.status)") for p in prods if p["id"]!=kurti["id"]][:3]
+    rec("hourly review limit: 3 accepted, then 429", codes==[201,201,429], str(codes))
+    r=pg.evaluate("fetch('/api/admin/reviews',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:1,status:'approved'})}).then(r=>r.status)"); rec("customer cannot approve reviews (403)", r==403, str(r))
+    ad.goto(B+"/admin"); ad.wait_for_selector("[data-t=reviews]"); ad.click("[data-t=reviews]"); ad.wait_for_selector(".review-admin-card"); overflow(ad,"admin reviews"); shot(ad,"19_admin_reviews")
+    ad.click("[data-review-act=approve] >> nth=0"); ad.wait_for_selector("text=Review published"); ad.wait_for_timeout(300)
+    approved=[x for x in state()["reviews"] if x["status"]=="approved"]
+    page=get("/product/"+[p for p in prods if p["id"]==approved[0]["product_id"]][0]["slug"])
+    rec("admin approval publishes the review with escaped text + real aggregate", "aggregateRating" in page and "5.0/5" in page and "<b>great</b>" not in page, "")
+    pg.goto(B+"/product/"+[p for p in prods if p["id"]==approved[0]["product_id"]][0]["slug"]); pg.wait_for_selector(".review-card"); shot(pg,"20_product_reviews")
+    rec("home card shows a rating only for products that have approved reviews", get("/category/"+[p for p in prods if p["id"]==approved[0]["product_id"]][0]["category"]).count("rating-mini")>=1)
+
+    # ---------- SHRI JI Assistant (fallback mode: no AI key configured) ----------
+    pg.goto(B+"/"); pg.wait_for_selector("#chatFab"); rec("assistant launcher visible on storefront (phone)", pg.is_visible("#chatFab"))
+    pg.click("#chatFab"); pg.wait_for_selector("#chatPanel"); shot(pg,"21_chat_open")
+    bx=pg.locator("#chatPanel").bounding_box(); rec("chat is a bottom sheet inside the 360px screen", bx["x"]>=0 and bx["width"]<=360.5 and bx["y"]+bx["height"]<=741, str(bx)); overflow(pg,"home with chat open")
+    rec("starter questions shown", pg.locator("#chatStarters .chip").count()==6)
+    pg.fill("#chatInput","mujhe 500 tak ka kurti dikhao"); pg.click("#chatSend"); pg.wait_for_function("document.querySelectorAll('.cb.bot:not(.typing)').length>=2", timeout=8000)
+    rec("budget ₹500: no kurti that cheap => honest 'not found', no fake product", pg.locator(".cm").count()==0 and "nahi mila" in pg.inner_text("#chatLog"))
+    pg.fill("#chatInput","mujhe 1000 tak ka kurti dikhao"); pg.click("#chatSend"); pg.wait_for_function("document.querySelectorAll('.cb.bot:not(.typing)').length>=3", timeout=8000); pg.wait_for_selector(".cm")
+    pr=[int("".join(c for c in t.split("₹")[1].split()[0] if c.isdigit())) for t in pg.locator(".cm-p").all_inner_texts()]
+    rec("Hinglish budget request returns real products within ₹1000", len(pr)>0 and all(x<=1000 for x in pr), str(pr))
+    rec("product mini-cards link to real product pages", all(h.startswith("/product/") for h in [a.get_attribute("href") for a in pg.locator("a.cm").all()]))
+    rec("fallback answers are labelled (not shown as AI)", "Automatic answer from store information" in pg.inner_text("#chatLog")); shot(pg,"22_chat_answer")
+    pg.fill("#chatInput","What is your return policy?"); pg.click("#chatSend"); pg.wait_for_function("document.querySelectorAll('.cb.bot:not(.typing)').length>=4", timeout=8000)
+    rec("unpublished policy: admits it and gives shop phone", "not been published" in pg.inner_text("#chatLog") and "9927892667" in pg.inner_text("#chatLog"))
+    pg.click("#chatClose"); rec("chat closes and launcher returns", not pg.is_visible("#chatPanel") and pg.is_visible("#chatFab"))
+    pg.reload(); pg.wait_for_selector("#chatFab"); pg.click("#chatFab"); rec("chat history kept for this browser session", pg.locator(".cb.me").count()==3); pg.click("#chatClose")
+    pg.goto(B+"/product/"+kurti["slug"]); pg.wait_for_timeout(300); pg.locator("#addBtn").scroll_into_view_if_needed(); pg.wait_for_timeout(600)
+    rec("launcher hides while Add to cart is on screen (never covers it)", pg.evaluate("getComputedStyle(document.getElementById('chatFab')).opacity")=="0")
+    pg.evaluate("window.scrollTo(0, document.body.scrollHeight)"); pg.wait_for_timeout(700)
+    rec("launcher returns when Add to cart is scrolled away", pg.evaluate("getComputedStyle(document.getElementById('chatFab')).opacity")=="1")
+    for path in ["/cart","/checkout","/account","/admin"]:
+        pg.goto(B+path); pg.wait_for_timeout(300); rec(f"no chat widget on {path}", pg.locator("#sjcChat").count()==0)
+    dk=br.new_context(viewport={"width":1280,"height":800}).new_page(); dk.goto(B+"/"); dk.wait_for_selector("#chatFab"); dk.click("#chatFab"); dk.wait_for_selector("#chatPanel")
+    bx=dk.locator("#chatPanel").bounding_box(); rec("desktop chat is a compact panel at bottom-right", bx["width"]<=381 and bx["x"]+bx["width"]<=1280 and bx["y"]+bx["height"]<=800, str(bx)); dk.screenshot(path="/tmp/shots/23_chat_desktop.png")
+    urllib.request.urlopen(B+"/__ai?on=1"); pg.goto(B+"/"); pg.wait_for_selector("#chatFab"); pg.click("#chatFab"); pg.fill("#chatInput","kurti dikhao"); pg.click("#chatSend"); pg.wait_for_function("document.getElementById('chatLog').innerText.includes('AI-MOCK')", timeout=8000)
+    last=pg.locator(".cb.bot:not(.typing)").last; rec("AI mode (mock provider): answer from the provider (not labelled automatic), cards still from the database", "AI-MOCK" in last.inner_text() and "Automatic answer" not in last.inner_text() and last.locator(".cm").count()>0)
+    rec("provider key never appears in any page or API response", "sk-e2e-key" not in get("/") and "sk-e2e-key" not in pg.content() and "sk-e2e-key" not in pg.inner_text("#chatLog"))
+    urllib.request.urlopen(B+"/__ai?on=0")
+    # owner edits the assistant from the admin panel
+    ad.goto(B+"/admin"); ad.wait_for_selector("[data-t=site]"); ad.click("[data-t=site]"); ad.wait_for_selector("#chatFaq"); overflow(ad,"admin assistant settings")
+    ad.fill("#chatFaq","no separator here"); ad.click("#saveChat"); ad.wait_for_selector("#mc .msg.err"); rec("admin FAQ format error is explained", "Question | Answer" in ad.inner_text("#mc"))
+    ad.fill("#chatFaq","Shop timing | We are open 10 AM to 8 PM every day."); ad.click("#saveChat"); ad.wait_for_selector("#mc .msg.ok"); shot(ad,"24_admin_assistant")
+    c4=newctx(); q=c4.new_page(); q.goto(B+"/"); q.wait_for_selector("#chatFab"); q.click("#chatFab"); q.fill("#chatInput","shop timing kya hai"); q.click("#chatSend"); q.wait_for_function("document.querySelectorAll('.cb.bot:not(.typing)').length>=2", timeout=8000)
+    rec("owner-written FAQ answer is used exactly", "We are open 10 AM to 8 PM every day." in q.inner_text("#chatLog"))
+    ad.uncheck("#chatOn"); ad.click("#saveChat"); ad.wait_for_selector("#mc .msg.ok")
+    r=q.evaluate("fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'hello'})}).then(r=>r.status)")
+    rec("owner can switch the assistant off: API refuses and widget is removed", r==503 and "/js/chat.js" not in get("/") and "/js/chat.js" not in get("/shop"), str(r))
+    rec("store keeps working with the assistant off", "New arrivals" in get("/") and "Add to cart" in get("/product/"+kurti["slug"]))
+    ad.check("#chatOn"); ad.click("#saveChat"); ad.wait_for_selector("#mc .msg.ok"); rec("assistant can be switched back on", "/js/chat.js" in get("/"))
 
     # ---------- misc pages ----------
     pg.goto(B+"/nope"); rec("unknown URL gets 404 page", "Page not found" in pg.content())

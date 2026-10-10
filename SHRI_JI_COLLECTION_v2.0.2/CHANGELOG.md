@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0.0: SHRI JI Assistant + review hardening
+* **New: SHRI JI Assistant** (chat). Server-side only, read-only, English/Hindi/Hinglish, real products only, works without an AI key ("store answers" mode), optional live AI through `ANTHROPIC_API_KEY`. Owner can switch it off and write FAQ answers in admin → Site. No new serverless function, no new table. See `AI_ASSISTANT_SETUP.md`.
+* **Reviews:** added spam controls (burst limit, 3 per hour and 1 per product per day per visitor; one-way visitor hash), "not purchase-verified" label, and the additive migration `migrations/20261011_review_abuse_controls.sql`.
+* Tests: 50 unit/API tests (was 34), 127 browser checks (was 90).
+* New docs: `CURRENT_AUDIT.md`, `AI_ASSISTANT_SETUP.md`, `DEPLOYMENT_CHECKLIST.md`, `.env.example`, `.gitignore`.
+* Changed files: `api/_assistant.js` (new), `api/_routes/site/chat.js` (new), `api/site.js`, `api/_lib.js`, `api/_validate.js`, `api/_catalog.js`, `api/_layout.js`, `api/products.js`, `api/_routes/admin/settings.js`, `vercel.json`, `public/js/chat.js` (new), `public/js/admin.js`, `public/style.css`, `migrations/20261011_review_abuse_controls.sql` (new), tests.
+
 ## 2.0.0: full rebuild on the existing Supabase + Vercel + Razorpay architecture
 
 ### 2.0.1
