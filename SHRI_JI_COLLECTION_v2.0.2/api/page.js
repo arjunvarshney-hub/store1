@@ -1,6 +1,6 @@
 // Server-rendered public pages (home, shop, category, product) so Google and slow phones get real HTML.
 import { siteUrl } from "./_lib.js";
-import { queryProducts } from "./_catalog.js";
+import { queryProducts, getSettings } from "./_catalog.js";
 import { homePage, listingPage, productPage, notFoundPage } from "./_layout.js";
 import { bySlug, groupBySlug } from "../public/js/categories.js";
 
@@ -16,23 +16,24 @@ export default async function handler(req, res) {
     res.send(html);
   };
   try {
+    const settings = await getSettings();
     if (type === "product") {
       const { products } = await queryProducts({ slug });
       const p = products[0];
-      if (!p) return send(404, notFoundPage(site, "Product"));
+      if (!p) return send(404, notFoundPage(site, "Product", settings));
       const rel = (await queryProducts({ category: p.category, limit: 5 })).products.filter((x) => x.id !== p.id).slice(0, 4);
-      return send(200, productPage(site, p, rel));
+      return send(200, productPage(site, p, rel, settings));
     }
     if (type === "category" || type === "shop") {
       const category = type === "category" && bySlug[slug] ? slug : undefined;
       const group = type === "category" && groupBySlug[slug] ? slug : undefined;
-      if (type === "category" && !category && !group) return send(404, notFoundPage(site, "Category"));
+      if (type === "category" && !category && !group) return send(404, notFoundPage(site, "Category", settings));
       const qs = String(one(q.q) || "").slice(0, 60), sort = ["price_asc", "price_desc"].includes(one(q.sort)) ? one(q.sort) : "new";
       const r = await queryProducts({ category, group, q: qs, sort, page: one(q.page), pageSize: 24 });
-      return send(200, listingPage(site, { ...r, category, group, q: qs, sort }));
+      return send(200, listingPage(site, { ...r, category, group, q: qs, sort, settings }));
     }
     const { products } = await queryProducts({ limit: 12 });
-    return send(200, homePage(site, { products }));
+    return send(200, homePage(site, { products, settings }));
   } catch (e) {
     console.error("[page]", e?.message || e);
     res.status(500).setHeader("Content-Type", "text/html; charset=utf-8").setHeader("Cache-Control", "no-store");

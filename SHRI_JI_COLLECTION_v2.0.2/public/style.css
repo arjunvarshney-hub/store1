@@ -107,3 +107,51 @@ body.adm{background:#f5efe4}.adm .top{position:static}.adm-bar{display:flex;alig
  .tiles{grid-template-columns:repeat(5,1fr)}.tile{min-height:64px}
  .card{transition:box-shadow .15s}.card:hover{box-shadow:0 8px 22px rgba(74,14,24,.14)}
 }
+
+/* ===== v2.2 clean light look (white header, minimal cards, split hero) ===== */
+:root{--cream:#fffdfa;--cream2:#f6efe4;--line:#ece3d4}
+.top{background:#fff;color:var(--ink);border-bottom:1px solid var(--line)}
+.top .ibtn{color:var(--m)}.ibtn.dark{color:#fff}.logo{color:var(--m)}.logo small{color:var(--g)}
+.foot .logo{color:#fff}
+.strip{background:var(--m);color:#f1dfb8;font-size:12px;padding:6px 10px}
+.eyebrow.dark{color:var(--g)}
+.sec-title{text-align:center;margin-bottom:22px}.sec-title .eyebrow{margin:0 0 6px}.sec-title .h2{font-size:28px;margin:0}
+.sec-title .h2::after{content:"";display:block;width:44px;height:2px;background:var(--g);margin:12px auto 0}
+.more-wrap{margin-top:26px}.contact{margin-bottom:16px}
+/* hero: light, split */
+.hero{background:var(--cream2);color:var(--ink);border-bottom:0;padding:34px 0 40px}
+.hero h1{color:var(--m);font-size:34px;line-height:1.15}.eyebrow{color:var(--g)}
+.hero-in{display:grid;gap:20px;align-items:center}.hero-art{display:none}
+.cta{margin-top:22px}.cta .btn{flex:1 1 150px}
+/* cards: no heavy borders */
+.card{border:0;background:transparent;border-radius:6px}
+.card-img{background:#fff;border:1px solid var(--line);border-radius:6px}.card-img img{object-fit:contain;background:#fff}
+.card-body{padding:10px 2px 14px}.card-title{font-weight:500;font-size:14px}.price b{font-size:16px}
+.tag{border-radius:3px;background:var(--m);letter-spacing:.3px}
+.band{background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.trust div{background:none;border:0;padding:6px 0;text-align:center}.trust b{font-family:var(--serif);font-size:17px}
+.foot{background:#3c0b15}
+@media(min-width:900px){
+ .top .dnav{background:#fff;border-top:1px solid var(--line)}.dnav a{color:var(--ink);font-weight:500;font-size:14px;letter-spacing:.2px}
+ .dnav a:hover,.dnav .dd:focus-within>a{background:none;color:var(--m)}.dnav-in{justify-content:center;gap:10px}
+ .hsearch input{background:var(--cream2);border:1px solid var(--line)}
+ .hero{padding:56px 0}.hero-in{grid-template-columns:1.1fr .9fr;gap:50px}.hero h1{font-size:52px}
+ .hero-art{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;min-height:300px;background:linear-gradient(160deg,var(--m),var(--md));border-radius:4px 90px 4px 4px;color:var(--gl);border:6px solid #fff;box-shadow:0 0 0 1px var(--line)}
+ .ring{width:130px;height:130px;border-radius:50%;border:2px solid var(--gl);display:flex;align-items:center;justify-content:center;font:700 34px var(--serif);letter-spacing:3px}
+ .hero-art small{letter-spacing:5px;font-size:11px}
+ .cta .btn{flex:0 1 220px}
+}
+
+/* ===== v2.3 editable logo + home picture ===== */
+.logo-img{display:block;height:38px;width:auto;max-width:190px;object-fit:contain}
+.hero-art.has-img{display:block;aspect-ratio:4/3;border-radius:4px 40px 4px 4px;overflow:hidden;border:5px solid #fff;box-shadow:0 0 0 1px var(--line);background:#fff}
+.hero-art.has-img img{width:100%;height:100%;object-fit:cover}
+.sprev{background:repeating-conic-gradient(#f3ede3 0 25%,#fff 0 50%) 0 0/16px 16px;border:1px dashed var(--line);border-radius:10px;padding:12px;min-height:90px;display:flex;align-items:center;justify-content:center;margin:10px 0}.sprev img{max-width:100%;max-height:150px;display:block}.sprev.hero img{max-height:210px}
+@media(min-width:900px){.logo-img{height:50px;max-width:260px}.hero-art.has-img{min-height:0;aspect-ratio:auto;height:340px;display:block;background:#fff}}
+
+/* ===== v2.4 one-line category strip on home ===== */
+.catstrip{background:#fff;border-bottom:1px solid var(--line)}
+.catstrip .chips{padding:12px 0;gap:8px;position:relative}
+.catstrip .chip{background:var(--cream);border-color:var(--line);font-size:14px;padding:8px 16px}
+.catstrip .chip:hover,.catstrip .chip:active{background:var(--m);border-color:var(--m);color:#fff}
+@media(min-width:900px){.catstrip .chips{justify-content:flex-start}}

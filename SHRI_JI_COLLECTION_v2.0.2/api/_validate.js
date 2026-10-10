@@ -103,3 +103,18 @@ export function imageKind(buf) {
   if (buf.length > 12 && buf.subarray(0, 4).toString("latin1") === "RIFF" && buf.subarray(8, 12).toString("latin1") === "WEBP") return { ext: "webp", type: "image/webp" };
   return null;
 }
+
+/** Site settings (logo / home picture): empty string = remove, otherwise must be an image from OUR bucket. */
+export const SETTING_KEYS = ["logo_url", "hero_url"];
+export function siteSettings(b, prefix = imagePrefix()) {
+  b = b && typeof b === "object" ? b : {};
+  const out = {};
+  for (const k of SETTING_KEYS) {
+    if (b[k] === undefined) continue;
+    const v = b[k] === null ? "" : b[k];
+    if (typeof v !== "string" || (v !== "" && (!v.startsWith(prefix) || v.length > 400))) throw new HttpError(400, "Invalid image. Please upload it using the uploader.");
+    out[k] = v;
+  }
+  if (!Object.keys(out).length) throw new HttpError(400, "Nothing to update.");
+  return out;
+}

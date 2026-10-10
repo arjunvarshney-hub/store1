@@ -15,10 +15,10 @@ async function boot() {
   show("products");
 }
 function shell(inner) {
-  R.innerHTML = `<div class="atabs" role="tablist"><button class="${tab === "products" ? "on" : ""}" data-t="products">Products</button><button class="${tab === "orders" ? "on" : ""}" data-t="orders">Orders</button></div><div id="pane">${inner}</div>`;
+  R.innerHTML = `<div class="atabs" role="tablist"><button class="${tab === "products" ? "on" : ""}" data-t="products">Products</button><button class="${tab === "orders" ? "on" : ""}" data-t="orders">Orders</button><button class="${tab === "site" ? "on" : ""}" data-t="site">Site</button></div><div id="pane">${inner}</div>`;
   $$(".atabs button").forEach((b) => b.addEventListener("click", () => show(b.dataset.t)));
 }
-function show(t) { tab = t; shell('<p class="muted">Loading…</p>'); (t === "products" ? loadProducts : loadOrders)(); }
+function show(t) { tab = t; shell('<p class="muted">Loading…</p>'); (t === "products" ? loadProducts : t === "orders" ? loadOrders : loadSite)(); }
 
 /* ------------------------------ PRODUCTS ------------------------------ */
 async function loadProducts() {
@@ -48,15 +48,15 @@ $("#root").addEventListener("change", async (e) => {
 });
 
 /* Phone photos are 3-8 MB: shrink to max 1600px JPEG (~300 KB) in the browser before uploading. */
-async function shrink(file) {
+async function shrink(file, { max = 1600, png = false } = {}) {
   if (!/^image\/(jpeg|png|webp)$/i.test(file.type)) throw new Error(`“${file.name}” is not a JPG, PNG or WebP photo.`);
   let bmp;
   try { bmp = await createImageBitmap(file, { imageOrientation: "from-image" }); }
   catch { bmp = await new Promise((ok, bad) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => bad(new Error(`Could not read “${file.name}”.`)); im.src = URL.createObjectURL(file); }); }
-  const w0 = bmp.width || bmp.naturalWidth, h0 = bmp.height || bmp.naturalHeight, k = Math.min(1, 1600 / Math.max(w0, h0));
+  const w0 = bmp.width || bmp.naturalWidth, h0 = bmp.height || bmp.naturalHeight, k = Math.min(1, max / Math.max(w0, h0));
   const c = document.createElement("canvas"); c.width = Math.round(w0 * k); c.height = Math.round(h0 * k);
-  const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(bmp, 0, 0, c.width, c.height);
-  const blob = await new Promise((ok) => c.toBlob(ok, "image/jpeg", 0.85));
+  const ctx = c.getContext("2d"); if (!png) { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); } ctx.drawImage(bmp, 0, 0, c.width, c.height);
+  const blob = await new Promise((ok) => png ? c.toBlob(ok, "image/png") : c.toBlob(ok, "image/jpeg", 0.85));
   if (!blob) throw new Error("Could not process the photo.");
   return blob;
 }
@@ -184,6 +184,38 @@ function orderSheet(o) {
       const { order } = await api("/api/admin/orders", { method: "PATCH", body: st ? { orderNumber: o.order_number, status: st.dataset.st } : { orderNumber: o.order_number, note: $("#note", sheet).value } });
       Object.assign(o, order); draw(); toast(st ? "Status updated" : "Note saved"); fetchOrders();
     } catch (err) { msg($("#m", sheet), err.message); sheet.scrollTo(0, 0); }
+  });
+}
+/* -------------------------------- SITE (logo + home picture) -------------------------------- */
+async function loadSite() {
+  let cur;
+  try { cur = (await api("/api/admin/settings")).settings; } catch (e) { $("#pane").innerHTML = `<div class="msg err">${esc(e.message)}</div><p class="sm muted">If this keeps failing, run the new SQL (site_settings table) in Supabase once.</p>`; return; }
+  // state per slot: {url} existing | {blob, preview} new | null removed/empty
+  const slots = { logo_url: cur.logo_url ? { url: cur.logo_url } : null, hero_url: cur.hero_url ? { url: cur.hero_url } : null };
+  const box = (key, title, help, extra) => `<div class="panel"><h2>${title}</h2><p class="sm muted">${help}</p><div class="sprev ${extra}" id="pv_${key}"></div><input type="file" id="f_${key}" accept="image/png,image/jpeg,image/webp"><button class="btn danger sm" type="button" id="rm_${key}" style="margin-top:8px">Remove picture</button></div>`;
+  $("#pane").innerHTML = box("logo_url", "Logo (top header)", "Shown at the top of every page instead of the text. A PNG with a transparent background looks best (wide, about 400 × 120).", "logo") +
+    box("hero_url", "Home page picture", "The picture next to “Thakur Ji Poshak & Ladies Wear” on the home page. Use a wide photo (4:3). If empty, the plain “SJC” card is shown.", "hero") +
+    '<div id="m"></div><button class="btn primary lg" id="saveSite" type="button" style="width:100%">Save changes</button><p class="sm muted">Changes appear on the website within about a minute.</p>';
+  const draw = () => { for (const k of Object.keys(slots)) { const s = slots[k]; $("#pv_" + k).innerHTML = s ? `<img src="${esc(s.preview || s.url)}" alt="${k === "logo_url" ? "Logo" : "Home picture"} preview">` : '<span class="muted sm">No picture (default is shown)</span>'; $("#rm_" + k).hidden = !s; } };
+  draw();
+  for (const k of Object.keys(slots)) {
+    $("#f_" + k).addEventListener("change", async (e) => {
+      const file = e.target.files[0]; e.target.value = ""; if (!file) return; msg($("#m"), "");
+      try { const blob = await shrink(file, k === "logo_url" ? { max: 600, png: file.type === "image/png" } : { max: 1600 }); if (slots[k]?.preview) URL.revokeObjectURL(slots[k].preview); slots[k] = { blob, preview: URL.createObjectURL(blob) }; draw(); }
+      catch (err) { msg($("#m"), err.message); }
+    });
+    $("#rm_" + k).addEventListener("click", () => { slots[k] = null; draw(); });
+  }
+  let saving = false;
+  $("#saveSite").addEventListener("click", async () => {
+    if (saving) return; saving = true; const btn = $("#saveSite"); btn.disabled = true; msg($("#m"), "");
+    try {
+      const body = {};
+      for (const k of Object.keys(slots)) { const s = slots[k]; if (!s) { if (cur[k]) body[k] = ""; continue; } if (s.blob) { btn.textContent = "Uploading…"; s.url = await upload(s.blob); body[k] = s.url; } }
+      if (!Object.keys(body).length) { msg($("#m"), "Nothing changed.", "info"); }
+      else { btn.textContent = "Saving…"; const d = await api("/api/admin/settings", { method: "PATCH", body }); Object.assign(cur, d.settings); toast("Saved"); }
+    } catch (err) { msg($("#m"), err.message); }
+    saving = false; btn.disabled = false; btn.textContent = "Save changes";
   });
 }
 boot();

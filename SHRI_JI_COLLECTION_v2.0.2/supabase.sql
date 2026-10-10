@@ -381,6 +381,18 @@ grant execute on function public.mark_order_paid(text, text, bigint) to service_
 grant execute on function public.mark_payment_failed(text) to service_role;
 grant execute on function public.expire_unpaid_orders(int) to service_role;
 
+-- ---------- Site settings (logo + home picture, edited from /admin -> Site) ----------
+create table if not exists public.site_settings (
+  key text primary key,
+  value text,
+  updated_at timestamptz not null default now()
+);
+alter table public.site_settings enable row level security;
+drop policy if exists "public can read site settings" on public.site_settings;
+create policy "public can read site settings" on public.site_settings for select to anon, authenticated using (true);
+revoke insert, update, delete, truncate on public.site_settings from anon, authenticated;
+grant select on public.site_settings to anon, authenticated;
+
 -- ---------- Storage: public-read bucket, uploads only through the server ----------
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('product-images', 'product-images', true, 3145728, array['image/jpeg','image/png','image/webp'])

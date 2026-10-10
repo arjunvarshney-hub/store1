@@ -20,3 +20,15 @@ export async function queryProducts({ ids, slug, category, group, q, sort = "new
   if (error) throw error;
   return { products: data || [], total: count ?? (data || []).length, page: Math.max(Number(page) || 1, 1), pageSize: size };
 }
+
+/** Logo + home picture. Never throws: if the table is missing the site simply shows the text logo. */
+export async function getSettings() {
+  try {
+    const db = await anon();
+    const { data, error } = await db.from("site_settings").select("key,value");
+    if (error || !data) return {};
+    const o = {};
+    for (const r of data) if (["logo_url", "hero_url"].includes(r.key) && r.value) o[r.key] = r.value;
+    return o;
+  } catch { return {}; }
+}

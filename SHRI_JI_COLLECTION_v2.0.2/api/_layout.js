@@ -8,7 +8,7 @@ export const BUSINESS = {
 };
 const ld = (o) => `<script type="application/ld+json">${JSON.stringify(o).replace(/</g, "\\u003c")}</script>`;
 
-export function shell({ title, desc, canonical, robots = "index,follow", body, jsonld = [], image, ogType = "website" }) {
+export function shell({ title, desc, canonical, robots = "index,follow", body, jsonld = [], image, ogType = "website", settings = {} }) {
   const img = safeUrl(image);
   return `<!doctype html><html lang="en-IN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>${esc(title)}</title><meta name="description" content="${esc(desc)}"><meta name="robots" content="${robots}"><meta name="theme-color" content="#5c1220">
@@ -16,7 +16,7 @@ export function shell({ title, desc, canonical, robots = "index,follow", body, j
 <meta property="og:site_name" content="${BRAND}"><meta property="og:type" content="${ogType}"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}"><meta property="og:url" content="${esc(canonical)}">${img ? `<meta property="og:image" content="${esc(img)}">` : ""}
 <meta name="twitter:card" content="${img ? "summary_large_image" : "summary"}">
 <link rel="stylesheet" href="/style.css">${jsonld.map(ld).join("")}</head><body>
-<header class="top" id="hdr">${headerHtml()}</header><main id="main">${body}</main><footer class="foot" id="ftr">${footerHtml()}</footer>
+<header class="top" id="hdr">${headerHtml({ logo: settings.logo_url })}</header><main id="main">${body}</main><footer class="foot" id="ftr">${footerHtml()}</footer>
 <script type="module" src="/js/common.js"></script></body></html>`;
 }
 
@@ -31,14 +31,15 @@ const pager = (base, page, total, size) => {
   return `<nav class="pager" aria-label="Pages">${page > 1 ? `<a class="btn outline" rel="prev" href="${esc(base + sep + "page=" + (page - 1))}">Previous</a>` : "<span></span>"}<span class="sm muted">Page ${page} of ${pages}</span>${page < pages ? `<a class="btn outline" rel="next" href="${esc(base + sep + "page=" + (page + 1))}">Next</a>` : "<span></span>"}</nav>`;
 };
 
-export function homePage(site, { products }) {
-  const tiles = GROUPS.map((g) => `<section class="grp"><h3><a href="/category/${g.slug}">${esc(g.name)}</a></h3><div class="tiles">${CATEGORIES.filter((c) => c.group === g.slug).map((c) => `<a class="tile" href="/category/${c.slug}">${esc(c.name)}</a>`).join("")}</div></section>`).join("");
-  const body = `<section class="hero"><div class="wrap"><p class="eyebrow">Sarai Tareen, Sambhal</p><h1>Thakur Ji Poshak &amp; Ladies Wear</h1><p class="lead">Laddu Gopal and Krishna poshak, mukut, mala, shringar, kurti, suits and more. Order online with Cash on Delivery or pay by UPI / Google Pay / card.</p><div class="cta"><a class="btn gold" href="/category/laddu-gopal-poshak">Thakur Ji Poshak</a><a class="btn light" href="/category/kurti">Ladies Wear</a></div></div></section>
-<section class="wrap sec"><div class="sec-head"><h2 class="h2">New arrivals</h2><a class="more" href="/shop">View all</a></div>${products.length ? `<div class="grid">${products.map(cardHtml).join("")}</div>` : '<p class="muted">New products are coming soon. Please check back shortly or message us on WhatsApp.</p>'}</section>
-<section class="wrap sec"><h2 class="h2">Shop by category</h2>${tiles}</section>
+export function homePage(site, { products, settings = {} }) {
+  const heroArt = safeUrl(settings.hero_url) ? `<div class="hero-art has-img"><img src="${esc(settings.hero_url)}" alt="${BRAND}" width="800" height="600" fetchpriority="high"></div>` : `<div class="hero-art" aria-hidden="true"><div class="ring"><span>SJC</span></div><small>SHRI JI COLLECTION</small></div>`;
+  const body = `<section class="hero"><div class="wrap hero-in"><div class="hero-txt"><p class="eyebrow">Sarai Tareen, Sambhal</p><h1>Thakur Ji Poshak &amp; Ladies Wear</h1><div class="cta"><a class="btn primary lg" href="/category/thakur-ji-poshak">Thakur Ji Poshak</a><a class="btn outline lg" href="/category/ladies-wear">Ladies Wear</a></div></div>${heroArt}</div></section>
+<nav class="catstrip" aria-label="Browse categories"><div class="wrap"><div class="chips">${CATEGORIES.map((c) => `<a class="chip" href="/category/${c.slug}">${esc(c.name)}</a>`).join("")}</div></div></nav>
+<section class="wrap sec"><div class="sec-title"><p class="eyebrow dark">Just in</p><h2 class="h2">New arrivals</h2></div>${products.length ? `<div class="grid">${products.map(cardHtml).join("")}</div><div class="center more-wrap"><a class="btn outline" href="/shop">View all products</a></div>` : '<p class="muted center">New products are coming soon. Please check back shortly or message us on WhatsApp.</p>'}</section>
 <section class="band"><div class="wrap trust"><div><b>Cash on Delivery</b><span>Pay when your order arrives</span></div><div><b>UPI / Cards</b><span>Secure online payment via Razorpay</span></div><div><b>Track orders</b><span>See status in My Orders</span></div></div></section>
-<section class="wrap sec" id="contact"><h2 class="h2">Visit or contact us</h2><address class="contact"><b>${BRAND}</b><br>तीर्थ मंदिर, सराय तरीन (संभल) – 244303<br><a href="tel:+919927892667">9927892667</a> &middot; <a href="tel:+919758673114">9758673114</a></address><a class="btn primary" href="https://wa.me/919927892667" target="_blank" rel="noopener">Chat on WhatsApp</a></section>`;
+<section class="wrap sec" id="contact"><div class="sec-title"><p class="eyebrow dark">Visit or say hello</p><h2 class="h2">Contact us</h2></div><address class="contact center"><b>${BRAND}</b><br>तीर्थ मंदिर, सराय तरीन (संभल) – 244303<br><a href="tel:+919927892667">9927892667</a> &middot; <a href="tel:+919758673114">9758673114</a></address><div class="center"><a class="btn primary" href="https://wa.me/919927892667" target="_blank" rel="noopener">Chat on WhatsApp</a></div></section>`;
   return shell({
+    settings,
     title: `${BRAND} | Thakur Ji Poshak & Ladies Wear, Sarai Tareen Sambhal`,
     desc: "SHRI JI COLLECTION, Sarai Tareen (Sambhal): Laddu Gopal poshak, Krishna poshak, mukut, mala, shringar and ladies wear - kurti, suit, dupatta. COD and online payment.",
     canonical: site + "/", body,
@@ -49,7 +50,7 @@ export function homePage(site, { products }) {
   });
 }
 
-export function listingPage(site, { products, total, page, pageSize, category, group, q, sort }) {
+export function listingPage(site, { products, total, page, pageSize, category, group, q, sort, settings = {} }) {
   const cat = category && bySlug[category], grp = group && groupBySlug[group];
   const name = cat ? cat.name : grp ? grp.name : q ? `Search: ${q}` : "All products";
   const basePath = cat ? `/category/${cat.slug}` : grp ? `/category/${grp.slug}` : "/shop";
@@ -66,6 +67,7 @@ ${products.length ? `<div class="grid">${products.map(cardHtml).join("")}</div>$
 ${cat || grp ? `<p class="seo muted sm">Buy ${esc(name)} online from ${BRAND}, Sarai Tareen, Sambhal. Cash on Delivery and online payment available.</p>` : ""}</div>`;
   const list = [["Home", "/"], ...(cat ? [[groupBySlug[cat.group].name, "/category/" + cat.group]] : []), [name, basePath]];
   return shell({
+    settings,
     title: cat || grp ? `${name} Online | ${BRAND}, Sarai Tareen Sambhal` : q ? `Search results for “${q}” | ${BRAND}` : `Shop all Thakur Ji Poshak & Ladies Wear | ${BRAND}`,
     desc: cat || grp ? `Shop ${name} at ${BRAND}, Sarai Tareen, Sambhal. Cash on Delivery and UPI / card payment. Order online.` : `Browse all products at ${BRAND}: Thakur Ji Poshak, shringar and ladies wear.`,
     canonical: site + basePath + (page > 1 ? `?page=${page}` : ""),
@@ -75,7 +77,7 @@ ${cat || grp ? `<p class="seo muted sm">Buy ${esc(name)} online from ${BRAND}, S
   });
 }
 
-export function productPage(site, p, related) {
+export function productPage(site, p, related, settings = {}) {
   const cat = bySlug[p.category];
   const url = `${site}/product/${p.slug}`;
   const imgs = (p.image_urls || []).filter(safeUrl);
@@ -98,7 +100,7 @@ ${related.length ? `<section class="sec"><h2 class="h2">You may also like</h2><d
   const title = `${p.name} - Buy Online | ${BRAND}`;
   const desc = (p.description ? p.description.replace(/\s+/g, " ").slice(0, 140) + " - " : "") + `${catName(p.category)} at ${BRAND}, Sarai Tareen Sambhal. ${money(effPrice(p))}.`;
   return shell({
-    title, desc: desc.slice(0, 160), canonical: url, body, image: imgs[0], ogType: "product",
+    settings, title, desc: desc.slice(0, 160), canonical: url, body, image: imgs[0], ogType: "product",
     jsonld: [
       { "@context": "https://schema.org", "@type": "Product", name: p.name, sku: String(p.id), category: catName(p.category), ...(imgs.length ? { image: imgs } : {}), ...(p.description ? { description: p.description.slice(0, 500) } : {}), ...(p.material ? { material: p.material } : {}), brand: { "@type": "Brand", name: BRAND },
         offers: { "@type": "Offer", url, priceCurrency: "INR", price: effPrice(p).toFixed(2), availability: soldOut ? "https://schema.org/OutOfStock" : "https://schema.org/InStock", itemCondition: "https://schema.org/NewCondition", seller: { "@type": "Organization", name: BRAND } } },
@@ -107,7 +109,7 @@ ${related.length ? `<section class="sec"><h2 class="h2">You may also like</h2><d
   });
 }
 
-export function notFoundPage(site, what = "Page") {
-  return shell({ title: `${what} not found | ${BRAND}`, desc: `${what} not found.`, canonical: site + "/", robots: "noindex,follow",
+export function notFoundPage(site, what = "Page", settings = {}) {
+  return shell({ settings, title: `${what} not found | ${BRAND}`, desc: `${what} not found.`, canonical: site + "/", robots: "noindex,follow",
     body: `<div class="wrap sec center"><h1 class="h1">${esc(what)} not found</h1><p class="muted">It may have been removed or is no longer available.</p><a class="btn primary" href="/shop">Browse all products</a></div>` });
 }

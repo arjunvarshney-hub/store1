@@ -1,5 +1,5 @@
 // Shared browser code: header/footer, API helper, cart, Razorpay launcher.
-import { headerHtml, footerHtml, esc, money } from "./render.js";
+import { headerHtml, footerHtml, logoHtml, esc, money } from "./render.js";
 export { esc, money };
 
 export async function api(url, { method = "GET", body } = {}) {
@@ -72,7 +72,16 @@ export async function payOnline({ orderNumber, razorpay, prefill, onPaid, onProb
 // ---------- header / footer ----------
 function init() {
   const h = $("#hdr"), f = $("#ftr");
-  if (h && !h.firstElementChild) h.innerHTML = headerHtml();
+  const LK = "sjc_logo_v1", cached = () => { try { return localStorage.getItem(LK) || ""; } catch { return ""; } };
+  const setCache = (u) => { try { u ? localStorage.setItem(LK, u) : localStorage.removeItem(LK); } catch { /* private mode */ } };
+  if (h && !h.firstElementChild) {          // static pages (cart, checkout, account, admin): header built here
+    h.innerHTML = headerHtml({ logo: cached() });
+    fetch("/api/site-settings", { credentials: "same-origin" }).then((r) => r.json()).then((d) => {
+      const u = d?.settings?.logo_url || "", a = $(".logo", h);
+      if (a && u !== cached()) { a.innerHTML = logoHtml(u); }
+      setCache(u);
+    }).catch(() => {});
+  } else if (h) setCache($(".logo-img", h)?.getAttribute("src") || "");   // server-rendered pages keep the cache fresh
   if (f && !f.firstElementChild) f.innerHTML = footerHtml();
   const btn = $("#menuBtn"), panel = $("#menuPanel"), bg = $("#drawerBg"), x = $("#menuClose");
   if (btn && panel && bg) {

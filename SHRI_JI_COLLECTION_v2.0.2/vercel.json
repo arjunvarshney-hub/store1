@@ -87,6 +87,14 @@
     {
       "source": "/api/verify-payment",
       "destination": "/api/orders?action=verify"
+    },
+    {
+      "source": "/api/admin/settings",
+      "destination": "/api/admin?action=settings"
+    },
+    {
+      "source": "/api/site-settings",
+      "destination": "/api/site?action=settings"
     }
   ],
   "crons": [
