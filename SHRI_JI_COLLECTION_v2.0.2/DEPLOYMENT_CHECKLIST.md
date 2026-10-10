@@ -1,54 +1,43 @@
-# SHRI JI COLLECTION deployment checklist
+# Deployment checklist (simple English)
 
-## Before Preview
+## 0. Know your repo layout
+Your GitHub repo `store1` keeps the project **inside the folder `SHRI_JI_COLLECTION_v2.0.2/`**.
+In Vercel → Project → Settings → General → **Root Directory** must be `SHRI_JI_COLLECTION_v2.0.2` (this could not be checked from here; please confirm). Production Branch should be `main`.
 
-- [ ] Verify the repository, branch, Vercel project, root directory and production domain are the intended ones.
-- [ ] Ensure the current production commit and database backup/recovery path are recorded.
-- [ ] Review `git diff` and ensure no `.env`, service-role key, OpenAI key, Razorpay secret, customer data or unrelated changes are included.
-- [ ] Run `npm test` and `git diff --check`.
-- [ ] Confirm the assistant route reuses `/api/site` and does not add a new top-level Vercel function.
-- [ ] Configure only Preview AI environment variables if live AI testing is intended; never paste keys into chat or commit them.
+## 1. Before you upload (Preview first)
+1. In GitHub, create a new **branch** (for example `assistant-update`) instead of changing `main` directly.
+2. Upload / replace the changed files in that branch (see CHANGELOG for the file list).
+3. Vercel automatically builds a **Preview** link for the branch (Deployments tab). Open it and test.
+4. Only when everything is good: open a Pull Request and **Merge** to `main`. That is the production release. Do this only when you decide to go live.
 
-## Supabase reviews migration — separate from code deployment
+## 2. Database (Supabase SQL Editor), in this order, once each
+| File | Needed for | Safe to re-run |
+|---|---|---|
+| `supabase.sql` | base tables | yes |
+| `migrations/20261010_product_reviews.sql` | customer reviews | yes |
+| `migrations/20261011_review_abuse_controls.sql` | review spam limits | yes |
+Before running anything: Supabase → Database → **Backups** (or Project Settings → Backups) and make sure a recent backup exists. These migrations only ADD things; they never delete or change products, orders or customers.
+Preflight check (read only): `select count(*) from public.products; select count(*) from public.orders;` Note the numbers, run the migration, run the same lines again; they must be equal.
+Rollback: the abuse-control file ends with a commented rollback. Code rollback does not undo database changes; the added column is harmless to old code.
 
-- [ ] Back up the database before migration.
-- [ ] Inspect actual `public.products.id` type, primary/unique key, current `product_reviews` table, existing functions and RLS policies.
-- [ ] Confirm the review migration foreign key type matches the actual products key.
-- [ ] Inspect `migrations/20261010_product_reviews.sql` and its rollback considerations.
-- [ ] Prefer a separate staging database. Do not run the full `supabase.sql` against an existing production database just to activate reviews.
-- [ ] Do not apply the migration automatically. Apply only after schema compatibility and backup are confirmed.
+## 3. Environment variables (Vercel)
+See `.env.example`. Nothing new is required. `ANTHROPIC_API_KEY` is optional (assistant works without it).
 
-## Preview acceptance checks
+## 4. Preview smoke test (do on your phone)
+1. Home loads; categories strip; New arrivals; logo/picture from admin appear.
+2. Open a product: gallery, size, Add to cart works; the round **Ask us** button hides while Add to cart is visible.
+3. Cart → Checkout with COD (use a test order) → appears in My Orders and in /admin → Orders.
+4. Product page: write a review → shows "sent for approval". /admin → **Reviews** → Approve → it appears with stars.
+5. Chat: ask "kurti dikhao". Check the answer and product cards.
+6. /admin → Site → Assistant: add one FAQ line, save, ask it in chat.
+7. Razorpay: use **test keys** only on Preview.
 
-- [ ] Homepage: header/search, both collection cards, real product cards, no broken images and no horizontal overflow.
-- [ ] Product page: current product data, Add to Cart and review form do not overlap the assistant; no fake rating when there are no approved reviews.
-- [ ] Review submission creates a pending review; only approved reviews are public and included in aggregate rating.
-- [ ] Admin can approve/reject reviews through server-authorized moderation.
-- [ ] Assistant appears on home/shop/category/product pages, not on cart/checkout/account/admin.
-- [ ] Assistant product cards use real catalogue prices and stock and link to actual product URLs.
-- [ ] In catalogue-only mode, UI clearly says live AI is not configured; do not claim AI mode.
-- [ ] With Preview credentials, test English, Hindi and Hinglish; budget filters; out-of-stock questions; unknown return/delivery policy; long/empty messages; provider timeout/failure; repeated requests; attempted prompt injection.
-- [ ] Inspect Network responses/source for secret leakage.
-- [ ] Confirm assistant cannot change orders, prices, stock or payment status.
-- [ ] Test widths 360, 390, 430, 768 and 1280px using browser tools if available.
-- [ ] Run E2E browser tests if Chromium/Playwright are installed; otherwise report `NOT TESTABLE` with the reason.
-- [ ] Verify Razorpay/COD code remains unchanged and Paytm has not been activated.
+## 5. Production release gate (needs YOUR approval)
+* Do not use live Razorpay keys until test payments work on Preview.
+* Paytm is **not** implemented. Do not announce it.
+* After merging: watch Deployments until **Ready**, open the live site, repeat steps 1 to 6 quickly.
 
-## Production release gate
-
-- [ ] Owner explicitly approves this release.
-- [ ] Correct Vercel project's latest Production deployment is identified; a Preview `Ready` status is not proof of Production deployment.
-- [ ] Any approved schema migration is complete and its success verified separately.
-- [ ] Required environment variables are present in the right Vercel environment scope.
-- [ ] Production build is Ready; runtime logs have been checked without exposing secrets or customer data.
-- [ ] Smoke-test homepage, a product page, cart, checkout display (without placing a real order), review status, assistant status, `/robots.txt` and `/sitemap.xml`.
-- [ ] Verify admin access and customer data isolation.
-- [ ] Monitor errors after release and stop/rollback if checkout, auth, product loading or privacy are degraded.
-
-## Rollback
-
-1. In Vercel, identify the known-good Production deployment and use the platform's rollback/promote-previous-deployment flow if available.
-2. Revert faulty code using a new Git commit or the repository's Revert action; avoid rewriting history.
-3. Code rollback does **not** automatically roll back database migrations. Restore database only using a rehearsed and compatible database backup/rollback plan.
-4. If the assistant causes unexpected cost/abuse, set `AI_ASSISTANT_ENABLED=false` in the relevant Vercel environment and redeploy.
-5. If a credential is exposed, rotate it at the provider and Vercel; do not only delete it from the latest file.
+## 6. Rollback (if the live site breaks)
+1. Vercel → Deployments → find the last deployment that worked → ⋯ → **Promote to Production** (instant).
+2. Then, in GitHub, revert the faulty pull request (button **Revert** on the merged PR).
+3. Database changes stay (they are additive and harmless).

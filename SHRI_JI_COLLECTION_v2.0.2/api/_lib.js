@@ -149,3 +149,25 @@ export function friendlyAuthError(e, fallback) {
   return fallback;
 }
 export const randomId = () => crypto.randomUUID();
+
+// ---------- abuse controls ----------
+/** One-way hash of the caller (IP + user agent). We never store or log the raw IP. */
+export function callerHash(req) {
+  const ip = String(req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || req.socket?.remoteAddress || "").split(",")[0].trim();
+  const salt = process.env.RATE_LIMIT_SALT || process.env.SUPABASE_URL || "sjc";
+  return crypto.createHash("sha256").update(`${salt}|${ip}|${String(req.headers["user-agent"] || "").slice(0, 80)}`).digest("hex").slice(0, 32);
+}
+const hits = new Map();
+/**
+ * Best-effort sliding-window limiter. Serverless instances do not share memory, so this is a cost/abuse
+ * brake per instance, not a perfect global limit (reviews additionally use a database check).
+ * Returns true when the request is allowed.
+ */
+export function rateLimit(key, max, windowMs, now = Date.now()) {
+  const arr = (hits.get(key) || []).filter((t) => now - t < windowMs);
+  if (arr.length >= max) { hits.set(key, arr); return false; }
+  arr.push(now); hits.set(key, arr);
+  if (hits.size > 5000) for (const [k, v] of hits) if (!v.length || now - v[v.length - 1] > windowMs) hits.delete(k);
+  return true;
+}
+export const _resetRateLimits = () => hits.clear();

@@ -1,5 +1,5 @@
 // Public catalogue and product-review API. Customer submissions are moderated before becoming public.
-import { route, shippingRule, HttpError, anon, admin, jsonBody } from "./_lib.js";
+import { route, shippingRule, HttpError, anon, admin, jsonBody, callerHash, rateLimit } from "./_lib.js";
 import { queryProducts, getProductReviewData } from "./_catalog.js";
 
 const reviewSetupMessage = "Customer reviews are not available right now. Please try again later. If this continues, the shop owner may need to finish the reviews database setup.";
@@ -44,19 +44,28 @@ export default route(["GET", "POST"], async (req, res) => {
       return res.status(202).json({ ok: true, message: "Thank you. Your review has been submitted for approval." });
     }
     const clean = validReview(body);
+    const who = callerHash(req);
+    // Layer 1 (per server instance): burst brake. Layer 2 (database, below): hourly / per-product limits.
+    if (!rateLimit(`review:${who}`, 5, 60 * 60 * 1000)) throw new HttpError(429, "You have sent several reviews recently. Please try again later.");
     try {
       const db = await admin();
       const { data: product, error: productError } = await db.from("products").select("id")
         .eq("id", clean.productId).eq("active", true).maybeSingle();
       if (productError) throw productError;
       if (!product) throw new HttpError(404, "This product is unavailable for review.");
-      const { error } = await db.from("product_reviews").insert({
-        product_id: clean.productId,
-        customer_name: clean.customerName,
-        rating: clean.rating,
-        comment: clean.comment,
-        status: "pending",
-      });
+      // Database-backed limits need the optional submitter_hash column (migrations/20261011_review_abuse_controls.sql).
+      let hashColumn = true;
+      const since = (ms) => new Date(Date.now() - ms).toISOString();
+      const recent = await db.from("product_reviews").select("id", { count: "exact", head: true }).eq("submitter_hash", who).gte("created_at", since(60 * 60 * 1000));
+      if (recent.error) hashColumn = false;
+      else if ((recent.count || 0) >= 3) throw new HttpError(429, "You have sent several reviews recently. Please try again later.");
+      if (hashColumn) {
+        const same = await db.from("product_reviews").select("id", { count: "exact", head: true }).eq("submitter_hash", who).eq("product_id", clean.productId).gte("created_at", since(24 * 60 * 60 * 1000));
+        if (!same.error && (same.count || 0) >= 1) throw new HttpError(429, "You have already sent a review for this product. Thank you! It will appear after our shop approves it.");
+      }
+      const row = { product_id: clean.productId, customer_name: clean.customerName, rating: clean.rating, comment: clean.comment, status: "pending" };
+      let { error } = await db.from("product_reviews").insert(hashColumn ? { ...row, submitter_hash: who } : row);
+      if (error && hashColumn && /submitter_hash/i.test(String(error.message || ""))) ({ error } = await db.from("product_reviews").insert(row));
       if (error) throw error;
       return res.status(201).json({ ok: true, status: "pending", message: "Thank you. Your review has been sent to SHRI JI COLLECTION for approval before it appears publicly." });
     } catch (error) {

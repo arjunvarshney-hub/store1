@@ -17,7 +17,7 @@ export function shell({ title, desc, canonical, robots = "index,follow", body, j
 <meta name="twitter:card" content="${img ? "summary_large_image" : "summary"}">
 <link rel="stylesheet" href="/style.css">${jsonld.map(ld).join("")}</head><body>
 <header class="top" id="hdr">${headerHtml({ logo: settings.logo_url })}</header><main id="main">${body}</main><footer class="foot" id="ftr">${footerHtml()}</footer>
-<script type="module" src="/js/common.js"></script></body></html>`;
+<script type="module" src="/js/common.js"></script>${settings.chat_enabled === "0" ? "" : '<script type="module" src="/js/chat.js"></script>'}</body></html>`;
 }
 
 const crumbs = (site, list) => ({
@@ -90,7 +90,7 @@ function reviewSection(data = {}) {
   const intro = !data.configured
     ? "Customer ratings and reviews are not available right now. Please check back soon."
     : count > 0
-      ? `${count} customer ${count === 1 ? "review" : "reviews"}`
+      ? `${count} customer ${count === 1 ? "review" : "reviews"} · written by customers, not purchase-verified`
       : "No reviews yet. Be the first to share your experience.";
   const cards = reviews.map((r) => {
     const date = r.created_at && Number.isFinite(Date.parse(r.created_at))
@@ -98,7 +98,7 @@ function reviewSection(data = {}) {
     return `<article class="review-card"><div class="review-head"><b>${esc(r.customer_name)}</b><time class="muted sm"${date ? ` datetime="${esc(new Date(r.created_at).toISOString())}"` : ""}>${esc(date)}</time></div><div class="review-rating">${starsHtml(r.rating)} <span class="sm">${Number(r.rating)}/5</span></div><p>${esc(r.comment).replace(/\n/g, "<br>")}</p></article>`;
   }).join("");
   const form = data.configured ? `<form id="reviewForm" class="review-form" novalidate>
-    <h3>Write a review</h3><p class="sm muted">Tell other customers about your experience. Reviews are checked by our shop before appearing publicly.</p>
+    <h3>Write a review</h3><p class="sm muted">Tell other customers about your experience. Reviews are checked by our shop before appearing publicly. They are written by customers and are not purchase-verified.</p>
     <label class="f">Your name *<input name="name" autocomplete="name" maxlength="80" minlength="2" required placeholder="Enter your name"></label>
     <fieldset class="rating-field"><legend>Your rating *</legend><div class="rating-pick">${[1,2,3,4,5].map((n) => `<label><input type="radio" name="rating" value="${n}" required><span aria-hidden="true">★</span><span class="sr-only">${n} ${n === 1 ? "star" : "stars"}</span></label>`).join("")}</div></fieldset>
     <label class="f">Your review *<textarea name="comment" required minlength="5" maxlength="1000" placeholder="What did you like or what could be better? (5–1,000 characters)"></textarea></label>

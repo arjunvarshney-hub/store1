@@ -1,6 +1,6 @@
 // Admin: logo + home picture. Public read happens via /api/site-settings.
 import { route, requireAdmin, admin, jsonBody } from "../../_lib.js";
-import { siteSettings, imagePrefix, SETTING_KEYS } from "../../_validate.js";
+import { siteSettings, imagePrefix, SETTING_KEYS, IMAGE_SETTING_KEYS } from "../../_validate.js";
 
 const load = async (db) => {
   const { data, error } = await db.from("site_settings").select("key,value");
@@ -17,7 +17,7 @@ export default route(["GET", "PATCH"], async (req, res) => {
   const { error } = await db.from("site_settings").upsert(rows, { onConflict: "key" });
   if (error) throw error;
   const pfx = imagePrefix();
-  const old = Object.keys(clean).map((k) => before[k]).filter((u, i) => u && u !== Object.values(clean)[i] && u.startsWith(pfx)).map((u) => u.slice(pfx.length));
+  const old = Object.keys(clean).filter((k) => IMAGE_SETTING_KEYS.includes(k)).map((k) => [before[k], clean[k]]).filter(([u, n]) => u && u !== n && u.startsWith(pfx)).map(([u]) => u.slice(pfx.length));
   if (old.length) await db.storage.from("product-images").remove(old).catch(() => {});   // best effort
   res.json({ settings: { ...before, ...clean } });
 });
