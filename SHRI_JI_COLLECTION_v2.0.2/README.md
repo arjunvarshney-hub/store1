@@ -12,9 +12,9 @@ api/               ONLY 9 serverless functions (Vercel Hobby plan allows max 12)
   page.js          server-rendered home / shop / category / product pages (SEO)
   auth.js          login, signup, logout, me, password reset      (/api/auth/*)
   orders.js        create order + my orders + pay + verify-payment (/api/orders, /api/orders/my, /api/pay, /api/verify-payment)
-  admin.js         admin products + orders + reviews/settings       (/api/admin/products, /api/admin/orders, /api/admin/reviews)
+  admin.js         admin products + orders                         (/api/admin/products, /api/admin/orders)
   upload-image.js  admin photo upload                              (/api/admin/upload-image)
-  products.js, site.js (sitemap + robots + SHRI JI Assistant), razorpay-webhook.js, cron/expire-orders.js
+  products.js, site.js (sitemap + robots), razorpay-webhook.js, cron/expire-orders.js
   _routes/, _*.js  the real handler code + helpers (underscore = not a function). vercel.json rewrites keep the old URLs
 supabase.sql       full database schema, Row Level Security, order/payment functions, storage bucket
 vercel.json        routing, security headers, daily clean-up cron
@@ -91,7 +91,7 @@ How payment safety works: the server computes the amount from database prices an
 3. **Sitemaps →** submit `sitemap.xml`.
 4. **URL Inspection →** paste your home page → *Request indexing*; repeat for a few category pages.
 5. Create a free **Google Business Profile** for the shop (needed for "near me" / Sarai Tareen / Sambhal searches). Content on the site can't replace it.
-6. Product structured data can be checked with Google's Rich Results Test. Only genuine approved product ratings/reviews are included; no default/fake ratings or testimonials are added.
+6. Product structured data can be checked with Google's Rich Results Test. No ratings or reviews are published, and none are invented.
 Ranking for "SHRI JI COLLECTION", "Thakur Ji Poshak" etc. takes weeks. Add real products with good names and photos regularly.
 
 ## 7. Everyday use (owner)
@@ -109,24 +109,4 @@ npx vercel dev      # run against your real Supabase (needs .env values)
 ```
 
 ## Known limitations
-See `CURRENT_AUDIT.md` for the latest evidence-based status. `AUDIT.md` is the historical pre-change audit; its older test counts are not the latest results.
-
-## 9. SHRI JI Assistant (optional live AI)
-
-A floating shopping-help widget is shown on home, shop, category and product pages. It is hidden on cart, checkout, account and admin pages. The endpoint `/api/assistant` is routed through the existing `/api/site` serverless dispatcher, so this feature does not add a new top-level Vercel function.
-
-- Without provider credentials, it runs in transparent **basic catalogue-help** mode. It can display products returned by the current active catalogue and must say live AI is not configured; it is not pretending that a canned answer came from an AI model.
-- With both `OPENAI_API_KEY` and `OPENAI_MODEL` in Vercel server-side Environment Variables, it can call the OpenAI Responses API. The provider key is server-side only.
-- `AI_ASSISTANT_ENABLED=false` disables/hides the assistant. The default is enabled; catalogue-only help works when the AI key/model are missing.
-- The assistant is read-only and does not access private order details or change prices, stock, refunds or payment statuses.
-- Do not treat the current in-memory request counter as durable protection. Before meaningful public traffic, add a durable or platform-level rate limiter.
-
-See [`AI_ASSISTANT_SETUP.md`](AI_ASSISTANT_SETUP.md) for setup, costs, privacy and Preview testing; see [`DEPLOYMENT_CHECKLIST.md`](DEPLOYMENT_CHECKLIST.md) before release. Choose a model supported by your API project using the provider's current official model documentation. Do not paste keys into chat or commit them.
-
-## 10. Premium homepage layout additions
-
-The homepage now includes two prominent collection entry cards—Thakur Ji Poshak and Ladies Wear—between category browsing and product discovery. Existing brand assets are kept; actual product images are used when available and a non-product typographic panel is used if no product image is present. Review the layout in a Vercel Preview at mobile and desktop widths before production.
-
-## 11. Read the current audit before deployment
-
-`CURRENT_AUDIT.md` records the scope and limits of the most recent local working-copy audit. Review ratings SQL against the live database schema; do not assume the migration has been applied. A Preview deployment marked Ready is not proof of production deployment.
+See `CHANGELOG.md` → "Not done / needs live verification" and `AUDIT.md`.

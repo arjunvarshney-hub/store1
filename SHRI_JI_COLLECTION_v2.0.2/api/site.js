@@ -2,8 +2,7 @@
 import sitemap from "./_routes/site/sitemap.js";
 import robots from "./_routes/site/robots.js";
 import settings from "./_routes/site/settings.js";
-import assistant from "./_routes/site/assistant.js";
 export default (req, res) => {
   const a = req.query?.action;
-  return a === "robots" ? robots(req, res) : a === "settings" ? settings(req, res) : a === "assistant" ? assistant(req, res) : sitemap(req, res);
+  return a === "robots" ? robots(req, res) : a === "settings" ? settings(req, res) : sitemap(req, res);
 };
