@@ -1,56 +1,35 @@
-# Current audit — uploaded SHRI JI COLLECTION project snapshot
+# CURRENT AUDIT (evidence-based)
 
-## Scope and evidence
+**Scope of this audit:** the repository ZIP `store1-main` supplied by the owner (project folder `SHRI_JI_COLLECTION_v2.0.2`). 
+**Not accessed:** GitHub (no repo access), Vercel (no dashboard/logs), the live Supabase database, live Razorpay. Everything marked `NOT TESTABLE` could not be verified for that reason.
+**Facts about the ZIP:** it has no `.git` folder, so the branch and last commit are unknown. The project sits inside the sub-folder `SHRI_JI_COLLECTION_v2.0.2/` (not the repo root). The reviews PR code (`api/_routes/admin/reviews.js`, review API in `api/products.js`, `migrations/20261010_product_reviews.sql`) **is present** in this ZIP. Whether it is live and whether the migration was applied in Supabase is **unknown**.
 
-- Inspected the uploaded `store1-main` ZIP, not a live Git checkout. The archive root identifies commit `cb6492509fed107579460fb4da055cc1ce3c1578` and contains `SHRI_JI_COLLECTION_v2.0.2`.
-- Ran `npm test` after the local changes in this working copy.
-- No owner Supabase credentials, Vercel project access, OpenAI key/model or live payment credentials were supplied to this build environment. The live database, current deployed domain/build and provider billing cannot be independently verified here.
-- No files were pushed to GitHub, no Supabase migration was executed, and no Vercel Production deployment was triggered by this work.
+Status words: `PASS`, `FAIL`, `PARTIALLY IMPLEMENTED`, `NOT TESTABLE`, `NOT IMPLEMENTED`.
 
-## Feature audit
+| Area | Observed (evidence) | Status | Risk | Action taken / proposed | Files | DB change | Deploy impact |
+|---|---|---|---|---|---|---|---|
+| Repo layout | Project is inside `SHRI_JI_COLLECTION_v2.0.2/`; `vercel.json` is in that folder | NOT TESTABLE (Vercel Root Directory unknown) | Wrong root = build fails | Documented in `DEPLOYMENT_CHECKLIST.md` | none | none | Root Directory must equal the folder name |
+| `.gitignore` / `.env.example` | Both were missing in the ZIP | FAIL (fixed) | A real `.env` could be committed | Added both (placeholders only) | `.gitignore`, `.env.example` | none | none |
+| Function count | 9 deployable files under `api/` (auth, admin, orders, site, products, page, upload-image, razorpay-webhook, cron). Test `Vercel Hobby limit` asserts ≤ 12. Chat reuses `api/site.js` | PASS (static count) | Hobby limit 12 | No new function added | `api/site.js` | none | none |
+| Reviews: storage + moderation | Table, RLS (public sees approved only), summary function, admin approve/reject/delete, honeypot, validation, pending-by-default; 7 pre-existing tests pass | PASS (code + fake DB) / NOT TESTABLE (live DB) | Migration may not be applied | Verified, not rewritten | `api/products.js`, `api/_routes/admin/reviews.js` | existing migration | none |
+| Reviews: abuse control | Only a honeypot existed. No rate limit | FAIL (fixed) | Spam flood | In-memory burst limit + DB limits (3/hour, 1 per product/day per hashed visitor), graceful if column missing | `api/products.js`, `api/_lib.js` | **additive** `20261011_review_abuse_controls.sql` | none |
+| Reviews: honesty/XSS/SEO | Comments escaped; no stars without data; JSON-LD only with approved data; "not purchase-verified" label was missing | PASS (label added) | Misleading trust | Label added; tests for escaping and aggregates | `api/_layout.js` | none | none |
+| Reviews: admin UI + public form | Verified in a real browser (Chromium, 360 px): submit → pending → admin approve → public with escaped text, real average | PASS (fake DB) | – | Browser tests added | `tests/e2e/run.py` | none | none |
+| AI assistant | Did not exist | PASS (implemented; fallback mode tested) / **NOT TESTABLE (live AI: no API key)** | Cost, prompt injection, privacy | See `AI_ASSISTANT_SETUP.md`. Read-only, server-side key, rate limits, untrusted-data handling, owner FAQ + on/off | `api/_assistant.js`, `api/_routes/site/chat.js`, `public/js/chat.js`, `api/_validate.js`, `api/_catalog.js`, `public/js/admin.js` | none (uses `site_settings`) | env vars optional |
+| Secure order tracking via chat | No safe verification flow exists in the app | PARTIALLY IMPLEMENTED | Data leak if done carelessly | Bot never reads orders; sends customer to login → My Orders (tested: orders table never touched) | `api/_assistant.js` | none | none |
+| Orders / stock / prices | Server-side validation, atomic reservation SQL function, idempotency key (unchanged from v2) | PASS (fake DB + JS mirror) / NOT TESTABLE (real SQL) | SQL never run here | Re-ran full suite | – | – | – |
+| Razorpay + COD | Server-created orders, signature verification, webhook, idempotent `mark_order_paid`; COD never marked paid at creation | PASS (unit, stubbed gateway) / NOT TESTABLE (real gateway) | Live behaviour unverified | Preserved, not changed | `api/_razorpay.js`, `api/_routes/orders/*` | none | test keys on Preview first |
+| Paytm | No code | NOT IMPLEMENTED | – | Deliberately not added (no merchant account/docs access; owner approval needed) | – | – | – |
+| Admin auth | Server-side `requireAdmin` on every admin route; customers get 403 (tests) | PASS | – | Unchanged; new settings fields use same guard | `api/_routes/admin/settings.js` | none | none |
+| Product admin extras | Add/edit/delete/active, sale price, sizes, multi-photo upload with preview, make-cover exist. **Missing:** featured toggle, SKU, colours/variants with own price/stock, photo re-order beyond "make cover", low-stock list | PARTIALLY IMPLEMENTED | Owner convenience | Not changed in this release (scope) | – | would need migration | – |
+| Order admin extras | Search, filters, detail, status update exist. **Missing:** status audit trail, CSV export | PARTIALLY IMPLEMENTED | – | Not changed | – | audit table needed | – |
+| Layout / UX | Previous releases: light theme, drawer menu, desktop header, category strip, logo/hero editable. **Not done from the design brief:** filter drawer + applied chips, sticky mobile buy bar, rating distribution, before/after screenshot set | PARTIALLY IMPLEMENTED | Subjective | Chat UI built to the same design tokens; checked at 360 px and 1280 px | `public/style.css` | none | none |
+| Mobile overflow | Checked on 360 px and 320 px in Chromium for all main pages and the open chat | PASS | – | Part of E2E | `tests/e2e/run.py` | – | – |
+| SEO | Sitemap, robots, canonical, Product JSON-LD (rating only when real) | PASS (code) | – | unchanged | – | – | – |
+| Performance (Core Web Vitals) | Not measured | NOT TESTABLE | – | Chat script is a small separate module; not loaded on cart/checkout/admin | – | – | – |
+| Vercel Preview / Production / logs / domains | No access | NOT TESTABLE | – | `DEPLOYMENT_CHECKLIST.md` (Preview first, rollback steps) | – | – | – |
+| Live Supabase (RLS, storage) | No access | NOT TESTABLE | – | Migrations are additive; preflight/rollback in checklist | – | – | – |
 
-| Area | Observed implementation | Status | Evidence / risk | Safe next step |
-|---|---|---|---|---|
-| Existing architecture | Plain HTML/CSS/JS, Vercel serverless API, Supabase, dispatchers/rewrites | PASS (snapshot) | Verified by project files; not a live deploy verification | Keep existing root and architecture |
-| Product reviews | Public API submission, pending moderation, approved reviews and aggregates, SSR product rating display | PARTIALLY IMPLEMENTED | Code exists and automated tests pass; database migration still must be matched to the real `products.id` type and applied safely | Back up DB, run read-only schema checks, then use compatible migration after approval |
-| Admin review moderation | Existing `/api/admin?action=reviews` dispatcher and admin guard | PASS (code/test scope) | Authorization tests cover representative paths; live admin/session not tested | Confirm in Preview with real admin account |
-| Customer AI/chat UI | Floating assistant on storefront path, product cards, starter prompts, accessible form, checkout/admin suppressed | PARTIALLY IMPLEMENTED | Added to local snapshot; browser E2E/real mobile screenshots not run | Preview-test narrow Android viewport and action overlap |
-| Assistant server endpoint | Routes through existing `/api/site` dispatcher; searches active catalogue; no new top-level function | PARTIALLY IMPLEMENTED | Source + unit/API tests; no live Vercel routing verified | Confirm Preview `/api/assistant` status/POST |
-| Live AI provider | OpenAI Responses API adapter enabled only when server-side key and model exist | NOT TESTABLE | No key/model available; no billable test made | Configure Preview variables privately and test; do not paste secrets into chat |
-| Catalogue fallback | Transparent catalogue-only mode when AI is not configured or errors | PASS (automated scope) | Fake DB tests verify matching current-price data and honest setup status | Verify with actual public catalogue in Preview |
-| Chat abuse control | Per-runtime in-memory request counter, message length limit, timeout and output size limit | PARTIALLY IMPLEMENTED | In-memory serverless counters reset/distribute; not durable production-wide control | Add approved durable or platform rate limiting before meaningful traffic |
-| Bot privacy/privileges | No order-detail lookup or business write actions; provider key server-side only | PARTIALLY IMPLEMENTED | Code path does not provide order mutation tools; full deployed secret/network audit unavailable | Review built deployment/network logs; preserve no-PII/no-secret behavior |
-| Premium layout | Added collection-entry cards and a consistent maroon/ivory/gold assistant UI, responsive CSS | PARTIALLY IMPLEMENTED | Source-level change; no actual screenshot/E2E visual comparison available | Preview screenshots at mobile/tablet/desktop and polish any overflow |
-| Cart/checkout/order/stock | Existing implementation retained | PARTIALLY IMPLEMENTED | Existing tests pass; no real Supabase/Razorpay order was placed | Run test checkout end-to-end in authorized staging/test mode |
-| Razorpay and COD | Existing source preserved; no gateway swap performed | PASS (preservation in source) | Automated tests simulate signature/webhook paths; real gateway not testable | Keep test-mode verification and do not remove Razorpay |
-| Paytm | Not present in this implementation | NOT IMPLEMENTED | No Paytm merchant credentials/configuration available | Implement only with current official docs and sandbox access, after owner approval |
-| Supabase schema/RLS/storage | SQL files exist in repo | NOT TESTABLE | No live DB/schema access; SQL was not executed | Use read-only diagnostics and backup before any migration |
-| Vercel production | `vercel.json` rewrite added for `/api/assistant` to `/api/site?action=assistant` | NOT TESTABLE | Not connected to Vercel from this environment | Check correct project, preview logs and production branch in dashboard |
-| Function count | Assistant reuses `/api/site`; new handler lives under `_routes` | PASS (static config/test scope) | No new top-level `api/*.js` function entry point | Verify actual Vercel build output against current plan limits |
-| Secrets | Added `.gitignore` and placeholder-only `.env.example` | PASS (local snapshot) | No real credentials added by this work | Confirm no secrets in remote history/deployment variables |
-
-## Tests run
-
-- `npm test`: **38 passed, 0 failed** after adding assistant API/provider/fallback and home-layout tests.
-- JavaScript syntax checks: **PASS** for every `.js` file under `api/` and `public/js/` using `node --check`.
-- `vercel.json` JSON parse: **PASS**.
-- Whitespace/diff check: **PASS**; comparing the uploaded snapshot to the modified working copy produced no `--check` whitespace/conflict-marker output. (The container copy is not a Git checkout, so standard `git diff --check` cannot run directly.)
-- Browser E2E: **NOT TESTABLE**; `npm run test:e2e` was attempted, but Playwright Chromium is missing at `/home/oai/.cache/ms-playwright/chromium_headless_shell-1200/chrome-headless-shell-linux64/chrome-headless-shell`.
-- Live Supabase, real OpenAI provider, and Vercel checks: **NOT TESTABLE** here.
-
-## Changes made in this working copy
-
-- Added AI assistant backend handler under `api/_routes/site/assistant.js`, routed through existing `api/site.js` and `/api/assistant` rewrite.
-- Added storefront assistant widget in `public/js/assistant.js`; wired it through `public/js/common.js`.
-- Added two department/collection cards to the SSR homepage using existing product imagery where available and non-product typographic art where imagery is unavailable.
-- Added responsive premium CSS for department cards and the assistant.
-- Added `.gitignore`, placeholder-only `.env.example`, `AI_ASSISTANT_SETUP.md`, `DEPLOYMENT_CHECKLIST.md`, and this audit report.
-- Updated tests and will update README/CHANGELOG after final test run.
-
-## Important blockers
-
-1. The uploaded product reviews migration is not verified against the real production schema and has not been applied.
-2. The AI assistant uses catalogue fallback until `OPENAI_API_KEY` and `OPENAI_MODEL` are configured in Vercel. Real AI is not enabled/tested here.
-3. The in-memory rate limiter is only best-effort; implement a durable or platform rate limiter before public traffic grows.
-4. Actual live site/domain, Preview routing, Supabase RLS, image storage, payment gateway and production deployment are not verified.
-5. No code was pushed or deployed by this local build step.
+## Test evidence (run in this environment)
+* `npm test`: 50 tests, 50 pass (34 existing + 16 new: assistant, review limits).
+* `npm run test:e2e`: 127 browser checks (Chromium, phone 360 px / 320 px, desktop 1280 px), 127 pass, run twice. Uses an in-memory fake of Supabase and a stubbed Razorpay/AI provider. It proves UI + API logic, **not** the real SQL, real Supabase or real providers.

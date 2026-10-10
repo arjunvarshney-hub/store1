@@ -70,7 +70,7 @@ export async function getSettings() {
     const { data, error } = await db.from("site_settings").select("key,value");
     if (error || !data) return {};
     const o = {};
-    for (const r of data) if (["logo_url", "hero_url"].includes(r.key) && r.value) o[r.key] = r.value;
+    for (const r of data) if (["logo_url", "hero_url", "chat_enabled"].includes(r.key) && r.value) o[r.key] = r.value;
     return o;
   } catch { return {}; }
 }

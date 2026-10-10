@@ -191,6 +191,18 @@ function orderSheet(o) {
   });
 }
 /* -------------------------------- SITE (logo + home picture) -------------------------------- */
+function faqToText(json) { try { return (JSON.parse(json || "[]") || []).map((x) => `${x.q} | ${x.a}`).join("\n"); } catch { return ""; } }
+function textToFaq(text) {
+  const out = [];
+  for (const [i, line] of String(text || "").split("\n").entries()) {
+    if (!line.trim()) continue;
+    const k = line.indexOf("|");
+    if (k < 1 || !line.slice(k + 1).trim()) throw new Error(`Line ${i + 1}: write it as  Question | Answer`);
+    out.push({ q: line.slice(0, k).trim(), a: line.slice(k + 1).trim() });
+  }
+  if (out.length > 30) throw new Error("Maximum 30 answers.");
+  return out;
+}
 async function loadSite() {
   let cur;
   try { cur = (await api("/api/admin/settings")).settings; } catch (e) { $("#pane").innerHTML = `<div class="msg err">${esc(e.message)}</div><p class="sm muted">If this keeps failing, run the new SQL (site_settings table) in Supabase once.</p>`; return; }
@@ -199,9 +211,26 @@ async function loadSite() {
   const box = (key, title, help, extra) => `<div class="panel"><h2>${title}</h2><p class="sm muted">${help}</p><div class="sprev ${extra}" id="pv_${key}"></div><input type="file" id="f_${key}" accept="image/png,image/jpeg,image/webp"><button class="btn danger sm" type="button" id="rm_${key}" style="margin-top:8px">Remove picture</button></div>`;
   $("#pane").innerHTML = box("logo_url", "Logo (top header)", "Shown at the top of every page instead of the text. A PNG with a transparent background looks best (wide, about 400 × 120).", "logo") +
     box("hero_url", "Home page picture", "The picture next to “Thakur Ji Poshak & Ladies Wear” on the home page. Use a wide photo (4:3). If empty, the plain “SJC” card is shown.", "hero") +
-    '<div id="m"></div><button class="btn primary lg" id="saveSite" type="button" style="width:100%">Save changes</button><p class="sm muted">Changes appear on the website within about a minute.</p>';
+    '<div id="m"></div><button class="btn primary lg" id="saveSite" type="button" style="width:100%">Save logo &amp; picture</button><p class="sm muted">Changes appear on the website within about a minute.</p>' +
+    `<div class="panel" style="margin-top:18px"><h2>SHRI JI Assistant (chat)</h2><p class="sm muted">The chat button on the shop. It answers from your products and from the answers you write below. It never sees orders.</p>
+     <label class="sw"><input type="checkbox" id="chatOn" ${cur.chat_enabled === "0" ? "" : "checked"}> Show the chat assistant on the shop</label>
+     <label class="f">Your answers <small>(one per line: Question | Answer)</small><textarea id="chatFaq" rows="8" placeholder="Do you give returns? | Write your real return policy here&#10;Shop timing? | 10 AM to 8 PM">${esc(faqToText(cur.chat_faq))}</textarea></label>
+     <p class="sm muted" id="faqCount"></p><div id="mc"></div>
+     <button class="btn primary" id="saveChat" type="button" style="width:100%">Save assistant settings</button>
+     <p class="sm muted">Only write policies and facts that are true. The assistant will not make up delivery times or return rules; it says "ask the shop" if there is no answer here.</p></div>`;
   const draw = () => { for (const k of Object.keys(slots)) { const s = slots[k]; $("#pv_" + k).innerHTML = s ? `<img src="${esc(s.preview || s.url)}" alt="${k === "logo_url" ? "Logo" : "Home picture"} preview">` : '<span class="muted sm">No picture (default is shown)</span>'; $("#rm_" + k).hidden = !s; } };
   draw();
+  const countFaq = () => { try { $("#faqCount").textContent = `${textToFaq($("#chatFaq").value).length} answer(s) ready`; } catch (e) { $("#faqCount").textContent = e.message; } };
+  $("#chatFaq").addEventListener("input", countFaq); countFaq();
+  $("#saveChat").addEventListener("click", async () => {
+    const b = $("#saveChat"); b.disabled = true; msg($("#mc"), "");
+    try {
+      const faq = textToFaq($("#chatFaq").value);
+      const d = await api("/api/admin/settings", { method: "PATCH", body: { chat_enabled: $("#chatOn").checked ? "1" : "0", chat_faq: faq } });
+      Object.assign(cur, d.settings); toast("Assistant settings saved"); msg($("#mc"), "Saved. Changes appear within about a minute.", "ok");
+    } catch (err) { msg($("#mc"), err.message); }
+    b.disabled = false;
+  });
   for (const k of Object.keys(slots)) {
     $("#f_" + k).addEventListener("change", async (e) => {
       const file = e.target.files[0]; e.target.value = ""; if (!file) return; msg($("#m"), "");
