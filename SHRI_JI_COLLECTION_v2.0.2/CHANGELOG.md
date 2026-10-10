@@ -54,3 +54,13 @@
 * The in-memory assistant rate limit is best-effort and not distributed/durable; use approved platform/durable rate limiting before meaningful public traffic.
 * Supabase review migration is not applied and must be matched to the live schema after backup/preflight.
 * Visual browser/E2E, live Supabase, production deployment and real payment tests remain unverified. No GitHub push or production deployment was made by this work.
+
+
+## 2026-10-10 — Mobile layout correction (prepared patch)
+
+- Fixed mobile hero calls-to-action wrapping into narrow, multi-line buttons by stacking the two actions at phone widths.
+- Tuned header spacing and logo sizing for narrow Android screens; hides only the redundant header search icon below 360px while search remains available in the menu.
+- Preserved full product imagery in collection cards, tightened product-card spacing, and made rating metadata more compact on phones.
+- Replaced the wide floating assistant pill with a compact, accessible circular launcher on mobile; adjusted the open chat panel for short viewports and safe areas.
+- Added targeted responsive rules for widths up to 599px, very narrow 320–359px screens, and landscape phones.
+- This patch was tested against a local server-rendered mock catalogue at 320, 360, 390, 430, 768, and 1280 CSS pixels. It has not been deployed to Vercel or tested on a physical Android device.
