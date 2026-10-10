@@ -84,6 +84,7 @@ test("SSR listing/home: canonical, noindex on search, product links", () => {
   assert.ok(s.includes('content="noindex,follow"') && !s.includes("<script>x</script>"));
   const h = homePage("https://shop.test", { products: [prod] });
   assert.ok(h.includes("ClothingStore") && h.includes("Sarai Tareen") && h.includes("244303"));
+  assert.match(h, /Shop by collection/); assert.match(h, /department-thakur-ji-poshak/); assert.match(h, /department-ladies-wear/);
   assert.ok(cardHtml(prod).includes("/product/red-poshak-7"));
 });
 

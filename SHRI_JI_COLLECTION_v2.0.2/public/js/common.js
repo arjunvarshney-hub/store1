@@ -1,5 +1,6 @@
 // Shared browser code: header/footer, API helper, cart, Razorpay launcher.
 import { headerHtml, footerHtml, logoHtml, esc, money } from "./render.js";
+import { initAssistant } from "./assistant.js";
 export { esc, money };
 
 export async function api(url, { method = "GET", body } = {}) {
@@ -98,6 +99,7 @@ function init() {
     window.matchMedia("(min-width:900px)").addEventListener("change", (m) => m.matches && !panel.hidden && set(false));
   }
   cart.badge();
+  initAssistant();
 }
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 window.addEventListener("storage", () => cart.badge());
