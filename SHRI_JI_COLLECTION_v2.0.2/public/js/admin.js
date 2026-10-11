@@ -29,7 +29,7 @@ function show(t) {
 async function loadProducts() {
   try {
     const cd = await api("/api/admin?action=categories"); if (Array.isArray(cd.categories)) adminCategories = cd.categories;
-    products = (await api("/api/admin/products")).products;
+    products = (await api("/api/admin?action=products")).products;
   } catch (e) { $("#pane").innerHTML = `<div class="msg err">${esc(e.message)}</div>`; return; }
   drawProducts();
 }
@@ -95,15 +95,15 @@ $("#root").addEventListener("click", async (e) => {
   const p = products.find((x) => x.id === Number(b.dataset.id));
   if (b.dataset.act === "edit" && p) productForm(p);
   if (b.dataset.act === "del" && p && confirm(`Delete “${p.name}” if it has never been ordered; otherwise archive it. Existing orders and photos will be preserved.`)) {
-    try { const d = await api("/api/admin/products", { method: "DELETE", body: { id: p.id } }); toast(d.archived ? "Archived to preserve order history" : "Deleted"); loadProducts(); } catch (err) { alert(err.message); }
+    try { const d = await api("/api/admin?action=products", { method: "DELETE", body: { id: p.id } }); toast(d.archived ? "Archived to preserve order history" : "Deleted"); loadProducts(); } catch (err) { alert(err.message); }
   }
   if (b.dataset.act === "restore" && p && confirm(`Restore “${p.name}” to the active catalogue?`)) {
-    try { await api("/api/admin/products", { method: "PATCH", body: { id: p.id, archived_at: null, active: true } }); toast("Product restored"); loadProducts(); } catch (err) { alert(err.message); }
+    try { await api("/api/admin?action=products", { method: "PATCH", body: { id: p.id, archived_at: null, active: true } }); toast("Product restored"); loadProducts(); } catch (err) { alert(err.message); }
   }
 });
 $("#root").addEventListener("change", async (e) => {
   const b = e.target.closest('[data-act="toggle"]'); if (!b) return;
-  try { await api("/api/admin/products", { method: "PATCH", body: { id: Number(b.dataset.id), active: b.checked } }); toast(b.checked ? "Product is now visible" : "Product hidden"); loadProducts(); }
+  try { await api("/api/admin?action=products", { method: "PATCH", body: { id: Number(b.dataset.id), active: b.checked } }); toast(b.checked ? "Product is now visible" : "Product hidden"); loadProducts(); }
   catch (err) { b.checked = !b.checked; alert(err.message); }
 });
 
@@ -249,7 +249,7 @@ function productForm(p) {
         image_urls: urls, featured: f.elements.featured.checked, active: f.elements.active.checked, archived_at: p?.archived_at || null,
       };
       if (edit) body.id = p.id;
-      await api("/api/admin/products", { method: edit ? "PATCH" : "POST", body });
+      await api("/api/admin?action=products", { method: edit ? "PATCH" : "POST", body });
       close(); toast("Product saved"); loadProducts();
     } catch (err) { msg(m, err.message); saving = false; btn.disabled = false; btn.textContent = "Save product"; }
   });
@@ -381,7 +381,7 @@ async function loadOrders() {
 async function fetchOrders() {
   const p = new URLSearchParams(Object.entries(filter).filter(([,v]) => v !== "" && v !== null && v !== undefined).map(([k,v]) => [k, String(v)]));
   try {
-    const response = await api("/api/admin/orders?" + p); orders = response.orders || [];
+    const response = await api("/api/admin?action=orders&" + p); orders = response.orders || [];
     const total = Number(response.total || 0), page = Number(response.page || filter.page || 1), pageSize = Number(response.pageSize || 50), pages = Math.max(1, Math.ceil(total / pageSize));
     $("#ol").innerHTML = `<p class="sm muted">${total} matching order${total===1?"":"s"} · Page ${page} of ${pages}</p>` +
       (orders.map(o => `<button class="pcard" style="display:block;width:100%;text-align:left;font:inherit;cursor:pointer" data-o="${esc(o.order_number)}"><div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(o.order_number)}</b><b>${money(o.total)}</b></div><div class="meta">${esc(o.customer_name)} · ${esc(o.phone)} · ${fmtDate(o.created_at)}</div><div class="meta">${Number(o.items?.length || 0)} item line(s) · ${o.payment_method === "COD" ? "Cash on Delivery" : "Online"}</div><div style="margin-top:6px">${badge(o.order_status)} ${badge(o.payment_status)}${o.tracking_number ? ` <span class="badge">Tracking: ${esc(o.tracking_number)}</span>` : ""}</div></button>`).join("") || '<p class="empty">No orders found. Clear filters or change the date range.</p>') +
@@ -423,7 +423,7 @@ function orderSheet(o) {
     }
     try {
       const body = st ? { orderNumber: o.order_number, status: st.dataset.st, ...(refund_reference ? { refund_reference: refund_reference.trim() } : {}) } : sn ? { orderNumber: o.order_number, note: $("#note", sheet).value } : { orderNumber: o.order_number, tracking_number: $("#trackingNumber", sheet).value.trim(), tracking_url: $("#trackingUrl", sheet).value.trim() };
-      const { order } = await api("/api/admin/orders", { method: "PATCH", body });
+      const { order } = await api("/api/admin?action=orders", { method: "PATCH", body });
       Object.assign(o, order); draw(); toast(st ? "Status updated" : sn ? "Note saved" : "Tracking details saved"); fetchOrders();
     } catch (err) { msg($("#m", sheet), err.message); sheet.scrollTo(0, 0); }
   });
@@ -443,7 +443,7 @@ function textToFaq(text) {
 }
 async function loadSite() {
   let cur;
-  try { cur = (await api("/api/admin/settings")).settings; } catch (e) { $("#pane").innerHTML = `<div class="msg err">${esc(e.message)}</div><p class="sm muted">If this keeps failing, run the new SQL (site_settings table) in Supabase once.</p>`; return; }
+  try { cur = (await api("/api/admin?action=settings")).settings; } catch (e) { $("#pane").innerHTML = `<div class="msg err">${esc(e.message)}</div><p class="sm muted">If this keeps failing, run the new SQL (site_settings table) in Supabase once.</p>`; return; }
   // state per slot: {url} existing | {blob, preview} new | null removed/empty
   const slots = { logo_url: cur.logo_url ? { url: cur.logo_url } : null, hero_url: cur.hero_url ? { url: cur.hero_url } : null };
   const box = (key, title, help, extra) => `<div class="panel"><h2>${title}</h2><p class="sm muted">${help}</p><div class="sprev ${extra}" id="pv_${key}"></div><input type="file" id="f_${key}" accept="image/png,image/jpeg,image/webp"><button class="btn danger sm" type="button" id="rm_${key}" style="margin-top:8px">Remove picture</button></div>`;
@@ -464,7 +464,7 @@ async function loadSite() {
     const b = $("#saveChat"); b.disabled = true; msg($("#mc"), "");
     try {
       const faq = textToFaq($("#chatFaq").value);
-      const d = await api("/api/admin/settings", { method: "PATCH", body: { chat_enabled: $("#chatOn").checked ? "1" : "0", chat_faq: faq } });
+      const d = await api("/api/admin?action=settings", { method: "PATCH", body: { chat_enabled: $("#chatOn").checked ? "1" : "0", chat_faq: faq } });
       Object.assign(cur, d.settings); toast("Assistant settings saved"); msg($("#mc"), "Saved. Changes appear within about a minute.", "ok");
     } catch (err) { msg($("#mc"), err.message); }
     b.disabled = false;
@@ -484,7 +484,7 @@ async function loadSite() {
       const body = {};
       for (const k of Object.keys(slots)) { const s = slots[k]; if (!s) { if (cur[k]) body[k] = ""; continue; } if (s.blob) { btn.textContent = "Uploading…"; s.url = await upload(s.blob); body[k] = s.url; } }
       if (!Object.keys(body).length) { msg($("#m"), "Nothing changed.", "info"); }
-      else { btn.textContent = "Saving…"; const d = await api("/api/admin/settings", { method: "PATCH", body }); Object.assign(cur, d.settings); toast("Saved"); }
+      else { btn.textContent = "Saving…"; const d = await api("/api/admin?action=settings", { method: "PATCH", body }); Object.assign(cur, d.settings); toast("Saved"); }
     } catch (err) { msg($("#m"), err.message); }
     saving = false; btn.disabled = false; btn.textContent = "Save changes";
   });
@@ -512,8 +512,8 @@ async function loadReviews() {
     if (action === "delete" && !confirm("Delete this customer review permanently? This cannot be undone.")) return;
     button.disabled = true;
     try {
-      if (action === "delete") await api("/api/admin/reviews", { method: "DELETE", body: { id } });
-      else await api("/api/admin/reviews", { method: "PATCH", body: { id, status: action === "approve" ? "approved" : action === "reject" ? "rejected" : "pending" } });
+      if (action === "delete") await api("/api/admin?action=reviews", { method: "DELETE", body: { id } });
+      else await api("/api/admin?action=reviews", { method: "PATCH", body: { id, status: action === "approve" ? "approved" : action === "reject" ? "rejected" : "pending" } });
       toast(action === "approve" ? "Review published" : action === "delete" ? "Review deleted" : action === "reject" ? "Review rejected" : "Review moved to pending");
       loadReviews();
     } catch (error) { alert(error.message); button.disabled = false; }
