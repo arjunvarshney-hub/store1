@@ -1,12 +1,5 @@
 # Changelog
 
-## 3.0.0: SHRI JI Assistant + review hardening
-* **New: SHRI JI Assistant** (chat). Server-side only, read-only, English/Hindi/Hinglish, real products only, works without an AI key ("store answers" mode), optional live AI through `ANTHROPIC_API_KEY`. Owner can switch it off and write FAQ answers in admin → Site. No new serverless function, no new table. See `AI_ASSISTANT_SETUP.md`.
-* **Reviews:** added spam controls (burst limit, 3 per hour and 1 per product per day per visitor; one-way visitor hash), "not purchase-verified" label, and the additive migration `migrations/20261011_review_abuse_controls.sql`.
-* Tests: 50 unit/API tests (was 34), 127 browser checks (was 90).
-* New docs: `CURRENT_AUDIT.md`, `AI_ASSISTANT_SETUP.md`, `DEPLOYMENT_CHECKLIST.md`, `.env.example`, `.gitignore`.
-* Changed files: `api/_assistant.js` (new), `api/_routes/site/chat.js` (new), `api/site.js`, `api/_lib.js`, `api/_validate.js`, `api/_catalog.js`, `api/_layout.js`, `api/products.js`, `api/_routes/admin/settings.js`, `vercel.json`, `public/js/chat.js` (new), `public/js/admin.js`, `public/style.css`, `migrations/20261011_review_abuse_controls.sql` (new), tests.
-
 ## 2.0.0: full rebuild on the existing Supabase + Vercel + Razorpay architecture
 
 ### 2.0.1
@@ -45,3 +38,16 @@
 * Shipping policy, returns policy and GST invoice are not built (business decisions needed).
 * No real product photos exist in the uploaded project; products show a neutral "Photo coming soon" tile until you upload photos in /admin.
 * Existing v1 products with free-text categories / external image URLs must be re-saved once in /admin (the form validates them).
+
+
+## 2026-10-10 — category and delivery upgrade
+
+- Prioritized the home hero around Thakur Ji Poshak & Shringar.
+- Removed Dress Material, Maxi, Gown, Fall and Astar, and Saree from customer-facing category navigation and category pages; retained legacy category labels for existing admin product records so they can be reassigned without deleting data.
+- Added Other Thakur Ji Accessories to the public category list.
+- Implemented the ₹50 / ₹40 / free delivery tiers at ₹499 and ₹1,000 boundaries in cart/checkout estimates and in the database order-creation transaction.
+- Added an additive Supabase migration for existing databases; it preserves order rows and does not drop/recreate tables.
+- Added combined product search/category/visibility/stock/sale filters and working sort controls in the admin product list.
+- Product deletion now archives products that are referenced by historical order items; unrelated products can still be deleted.
+- Added responsive assistant and narrow-screen layout styling covered by regression tests.
+- Automated test suite: 41 passed, 0 failed. Live Supabase/Vercel/payment/email checks were not run in this environment.

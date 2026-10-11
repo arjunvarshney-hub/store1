@@ -1,12 +1,12 @@
 // Public catalogue queries. Uses the ANON key so Row Level Security applies (active products only).
 import { anon } from "./_lib.js";
-import { slugsInGroup, bySlug } from "../public/js/categories.js";
+import { slugsInGroup, bySlug, CATEGORIES } from "../public/js/categories.js";
 
 export const PRODUCT_COLS = "id,slug,name,category,price,sale_price,description,material,sizes,image_urls,stock,created_at,updated_at";
 
 export async function queryProducts({ ids, slug, category, group, q, sort = "new", page = 1, pageSize = 24, limit } = {}) {
   const db = await anon();
-  let qb = db.from("products").select(PRODUCT_COLS, { count: "exact" }).eq("active", true);
+  let qb = db.from("products").select(PRODUCT_COLS, { count: "exact" }).eq("active", true).in("category", CATEGORIES.map((c) => c.slug));
   if (ids) qb = qb.in("id", ids);
   if (slug) qb = qb.eq("slug", slug);
   if (category && bySlug[category]) qb = qb.eq("category", category);
@@ -70,7 +70,7 @@ export async function getSettings() {
     const { data, error } = await db.from("site_settings").select("key,value");
     if (error || !data) return {};
     const o = {};
-    for (const r of data) if (["logo_url", "hero_url", "chat_enabled"].includes(r.key) && r.value) o[r.key] = r.value;
+    for (const r of data) if (["logo_url", "hero_url"].includes(r.key) && r.value) o[r.key] = r.value;
     return o;
   } catch { return {}; }
 }

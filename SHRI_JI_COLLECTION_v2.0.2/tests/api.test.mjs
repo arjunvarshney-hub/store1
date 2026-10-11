@@ -69,6 +69,7 @@ test("create order: login required; prices come from DB (rpc gets ids only); COD
   assert.equal(r.statusCode, 201); assert.equal(r.body.orderNumber, "SJC-260101-AB12C"); assert.equal(r.body.razorpay, undefined);
   const [name, args] = fake.rpcCalls[0];
   assert.equal(name, "create_order"); assert.equal(args.p_user, USER.id); assert.deepEqual(args.p_items, [{ productId: 3, qty: 2, size: "M" }]);
+  assert.equal(args.p_shipping_under_499, 50); assert.equal(args.p_shipping_499_999, 40); assert.equal(args.p_free_above, 1000);
   assert.ok(!JSON.stringify(args).includes('"price"') && !JSON.stringify(args).includes("subtotal"));
 });
 test("create order: out-of-stock and invalid input map to clear errors", async () => {
@@ -102,11 +103,36 @@ test("verify-payment: needs login, valid signature and ownership; never trusts t
   fake.resolve = () => ({ data: { order_number: "SJC-1", user_id: "someone-else" }, error: null });
   assert.equal((await call(h, { method: "POST", headers: hd, body })).statusCode, 404);        // someone else's order
   assert.equal(fake.rpcCalls.length, 0);
-  fake.resolve = () => ({ data: { order_number: "SJC-1", user_id: USER.id }, error: null });
+  fake.resolve = () => ({ data: { id: 9, order_number: "SJC-1", user_id: USER.id, total: "1598.00", payment_status: "pending" }, error: null });
   fake.rpcImpl = async () => ({ data: { order_number: "SJC-1", payment_status: "paid" }, error: null });
-  const ok = await call(h, { method: "POST", headers: hd, body });
-  assert.equal(ok.statusCode, 200); assert.equal(fake.rpcCalls[0][0], "mark_order_paid"); assert.equal(fake.rpcCalls[0][1].p_payment_id, "pay_ABC123456");
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    assert.match(String(url), /\/v1\/payments\/pay_ABC123456$/); assert.match(init.headers.Authorization, /^Basic /);
+    return { ok: true, json: async () => ({ id: "pay_ABC123456", order_id: "order_TEST123456", amount: 159800, currency: "INR", status: "captured", captured: true }) };
+  };
+  try {
+    const ok = await call(h, { method: "POST", headers: hd, body });
+    assert.equal(ok.statusCode, 200); assert.equal(fake.rpcCalls[0][0], "mark_order_paid"); assert.equal(fake.rpcCalls[0][1].p_payment_id, "pay_ABC123456");
+    assert.equal(fake.rpcCalls[0][1].p_amount_paise, 159800);
+  } finally { globalThis.fetch = originalFetch; }
 });
+test("verify-payment: a valid signature alone cannot confirm an amount-mismatched or uncaptured payment", async () => {
+  const h = await load("../api/_routes/orders/verify.js"), hd = { ...same, ...cookieFor("tokUser") };
+  const sig = crypto.createHmac("sha256", "sec").update("order_TEST123456|pay_ABC123456").digest("hex");
+  const body = { razorpay_order_id: "order_TEST123456", razorpay_payment_id: "pay_ABC123456", razorpay_signature: sig };
+  const originalFetch = globalThis.fetch;
+  fake.resolve = () => ({ data: { id: 9, order_number: "SJC-1", user_id: USER.id, total: "1598.00", payment_status: "pending" }, error: null });
+  fake.rpcCalls = [];
+  try {
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({ id: "pay_ABC123456", order_id: "order_TEST123456", amount: 1, currency: "INR", status: "captured", captured: true }) });
+    const mismatch = await call(h, { method: "POST", headers: hd, body });
+    assert.equal(mismatch.statusCode, 409); assert.equal(fake.rpcCalls.length, 0);
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({ id: "pay_ABC123456", order_id: "order_TEST123456", amount: 159800, currency: "INR", status: "authorized", captured: false }) });
+    const notCaptured = await call(h, { method: "POST", headers: hd, body });
+    assert.equal(notCaptured.statusCode, 409); assert.equal(fake.rpcCalls.length, 0);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test("webhook: bad/missing signature rejected; valid payment.captured marks paid once", async () => {
   const h = await load("../api/razorpay-webhook.js");
   const raw = JSON.stringify({ event: "payment.captured", payload: { payment: { entity: { id: "pay_ABC123456", order_id: "order_TEST123456", amount: 159800 } } } });

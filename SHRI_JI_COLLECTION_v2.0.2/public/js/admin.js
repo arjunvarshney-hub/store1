@@ -1,10 +1,10 @@
 import { api, esc, money, $, $$, msg, badge, fmtDate, toast } from "./common.js";
 import { imgTag, effPrice } from "./render.js";
-import { GROUPS, CATEGORIES, catName } from "./categories.js";
+import { GROUPS, CATEGORIES, LEGACY_CATEGORIES, catName } from "./categories.js";
 
 const R = $("#root");
 const STATUSES = ["pending", "confirmed", "packed", "shipped", "delivered", "cancelled"];
-let tab = "products", products = [], orders = [], reviewStatus = "pending", filter = { search: "", status: "", payment: "" };
+let tab = "products", products = [], orders = [], reviewStatus = "pending", filter = { search: "", status: "", payment: "" }, productFilter = { search: "", category: "", visibility: "", stock: "", sort: "new" };
 
 async function boot() {
   try {
@@ -29,27 +29,48 @@ async function loadProducts() {
   try { products = (await api("/api/admin/products")).products; } catch (e) { $("#pane").innerHTML = `<div class="msg err">${esc(e.message)}</div>`; return; }
   drawProducts();
 }
-function drawProducts(q = "") {
-  const list = products.filter((p) => !q || `${p.name} ${catName(p.category)}`.toLowerCase().includes(q.toLowerCase()));
-  $("#pane").innerHTML = `<div class="tools"><input id="ps" type="search" placeholder="Search products…" value="${esc(q)}"><button class="btn primary" id="add" type="button">+ Add product</button></div><p class="sm muted">${products.length} product${products.length === 1 ? "" : "s"} · ${products.filter((p) => p.active).length} visible on the shop</p>` +
-    (list.map((p) => `<div class="pcard"><div>${imgTag(p.image_urls?.[0], p.name, { w: 72, h: 72 })}</div><div><div class="nm">${esc(p.name)}</div><div class="meta">${esc(catName(p.category))} · ${money(effPrice(p))}${p.sale_price ? ` <s>${money(p.price)}</s>` : ""} · Stock ${p.stock}</div>
-      <div class="acts"><label class="sw"><input type="checkbox" data-act="toggle" data-id="${p.id}" ${p.active ? "checked" : ""}> ${p.active ? "Visible" : "Hidden"}</label><button class="btn outline sm" data-act="edit" data-id="${p.id}">Edit</button><button class="btn danger sm" data-act="del" data-id="${p.id}">Delete</button></div></div></div>`).join("") || '<p class="empty">No products yet. Tap “Add product”.</p>');
-  $("#ps").addEventListener("input", (e) => { const v = e.target.value; drawProducts(v); const el = $("#ps"); el.focus(); el.setSelectionRange(v.length, v.length); });
+function drawProducts() {
+  const q = productFilter.search.trim().toLowerCase();
+  let list = products.filter((p) => {
+    const searchable = `${p.name || ""} ${p.id || ""} ${catName(p.category)}`.toLowerCase();
+    if (q && !searchable.includes(q)) return false;
+    if (productFilter.category && p.category !== productFilter.category) return false;
+    if (productFilter.visibility === "active" && !p.active) return false;
+    if (productFilter.visibility === "inactive" && p.active) return false;
+    if (productFilter.stock === "out" && Number(p.stock) > 0) return false;
+    if (productFilter.stock === "in" && Number(p.stock) <= 0) return false;
+    if (productFilter.stock === "low" && !(Number(p.stock) > 0 && Number(p.stock) <= 5)) return false;
+    if (productFilter.stock === "sale" && !(p.sale_price && Number(p.sale_price) < Number(p.price))) return false;
+    return true;
+  });
+  const cmpName = (a, b) => String(a.name || "").localeCompare(String(b.name || ""));
+  const sorters = {
+    new: (a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0),
+    old: (a,b) => new Date(a.created_at || 0) - new Date(b.created_at || 0),
+    az: cmpName, za: (a,b) => cmpName(b,a),
+    low: (a,b) => effPrice(a) - effPrice(b), high: (a,b) => effPrice(b) - effPrice(a),
+    stockLow: (a,b) => Number(a.stock) - Number(b.stock), stockHigh: (a,b) => Number(b.stock) - Number(a.stock),
+    updated: (a,b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0),
+  };
+  list.sort(sorters[productFilter.sort] || sorters.new);
+  const categoryOpts = [...CATEGORIES, ...LEGACY_CATEGORIES].map((c) => `<option value="${c.slug}" ${productFilter.category === c.slug ? "selected" : ""}>${esc(c.name)}${LEGACY_CATEGORIES.some((x) => x.slug === c.slug) ? " (legacy)" : ""}</option>`).join("");
+  const select = (id, value, opts) => `<select id="${id}">${opts.map(([v, label]) => `<option value="${v}" ${value === v ? "selected" : ""}>${label}</option>`).join("")}</select>`;
+  const sortOpts = [["new","Newest first"],["old","Oldest first"],["az","Name A–Z"],["za","Name Z–A"],["low","Price low–high"],["high","Price high–low"],["stockLow","Stock low–high"],["stockHigh","Stock high–low"],["updated","Recently updated"]];
+  const visOpts = [["","All visibility"],["active","Visible"],["inactive","Hidden"]];
+  const stockOpts = [["","All stock / offers"],["in","In stock"],["out","Out of stock"],["low","Low stock (1–5)"],["sale","Sale products"]];
+  const listHtml = list.map((p) => `<div class="pcard"><div>${imgTag(p.image_urls?.[0], p.name, { w: 72, h: 72 })}</div><div><div class="nm">${esc(p.name)}</div><div class="meta">${esc(catName(p.category))} · ${money(effPrice(p))}${p.sale_price ? ` <s>${money(p.price)}</s>` : ""} · Stock ${p.stock}</div>
+      <div class="acts"><label class="sw"><input type="checkbox" data-act="toggle" data-id="${p.id}" ${p.active ? "checked" : ""}> ${p.active ? "Visible" : "Hidden"}</label><button class="btn outline sm" data-act="edit" data-id="${p.id}">Edit</button><button class="btn danger sm" data-act="del" data-id="${p.id}">Archive / Delete</button></div></div></div>`).join("");
+  $("#pane").innerHTML = `<div class="tools"><input id="ps" type="search" placeholder="Search name, product ID, category…" value="${esc(productFilter.search)}"><button class="btn primary" id="add" type="button">+ Add product</button></div>
+  <div class="tools"><select id="pc"><option value="">All categories</option>${categoryOpts}</select>${select("pv", productFilter.visibility, visOpts)}${select("pst", productFilter.stock, stockOpts)}${select("psort", productFilter.sort, sortOpts)}<button class="btn outline sm" id="clearProductFilters" type="button">Clear filters</button></div>
+  <p class="sm muted">Showing ${list.length} of ${products.length} products · ${products.filter((p) => p.active).length} visible on the shop. Low stock means 1–5 units.</p>` + (listHtml || '<p class="empty">No products match these filters.</p>');
+  $("#ps").addEventListener("input", (e) => { productFilter.search = e.target.value; const pos = e.target.selectionStart; drawProducts(); const el = $("#ps"); el.focus(); el.setSelectionRange(pos, pos); });
+  $("#pc").onchange = (e) => { productFilter.category = e.target.value; drawProducts(); };
+  $("#pv").onchange = (e) => { productFilter.visibility = e.target.value; drawProducts(); };
+  $("#pst").onchange = (e) => { productFilter.stock = e.target.value; drawProducts(); };
+  $("#psort").onchange = (e) => { productFilter.sort = e.target.value; drawProducts(); };
+  $("#clearProductFilters").onclick = () => { productFilter = { search: "", category: "", visibility: "", stock: "", sort: "new" }; drawProducts(); };
   $("#add").onclick = () => productForm();
 }
-$("#root").addEventListener("click", async (e) => {
-  const b = e.target.closest("[data-act]"); if (!b || b.tagName === "INPUT") return;
-  const p = products.find((x) => x.id === Number(b.dataset.id));
-  if (b.dataset.act === "edit" && p) productForm(p);
-  if (b.dataset.act === "del" && p && confirm(`Delete “${p.name}” permanently? Its photos will be removed too.\n\nTip: use the Visible switch to just hide it.`)) {
-    try { await api("/api/admin/products", { method: "DELETE", body: { id: p.id } }); toast("Deleted"); loadProducts(); } catch (err) { alert(err.message); }
-  }
-});
-$("#root").addEventListener("change", async (e) => {
-  const b = e.target.closest('[data-act="toggle"]'); if (!b) return;
-  try { await api("/api/admin/products", { method: "PATCH", body: { id: Number(b.dataset.id), active: b.checked } }); toast(b.checked ? "Product is now visible" : "Product hidden"); loadProducts(); }
-  catch (err) { b.checked = !b.checked; alert(err.message); }
-});
 
 /* Phone photos are 3-8 MB: shrink to max 1600px JPEG (~300 KB) in the browser before uploading. */
 async function shrink(file, { max = 1600, png = false } = {}) {
@@ -78,10 +99,12 @@ function productForm(p) {
   let imgs = (p?.image_urls || []).map((url) => ({ url }));
   const sheet = document.createElement("div"); sheet.className = "sheet"; sheet.setAttribute("role", "dialog"); sheet.setAttribute("aria-modal", "true");
   const catOpts = GROUPS.map((g) => `<optgroup label="${esc(g.name)}">${CATEGORIES.filter((c) => c.group === g.slug).map((c) => `<option value="${c.slug}" ${p?.category === c.slug ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</optgroup>`).join("");
+  const legacy = p && LEGACY_CATEGORIES.find((c) => c.slug === p.category);
+  const legacyOpts = legacy ? `<optgroup label="Legacy category (hidden from shop navigation)"><option value="${legacy.slug}" selected>${esc(legacy.name)} — reassign this product before making it visible</option></optgroup>` : "";
   sheet.innerHTML = `<div class="sheet-in"><div class="sheet-h"><h2>${edit ? "Edit product" : "Add product"}</h2><button class="btn outline sm" id="x" type="button">Close</button></div>
   <form id="pf" novalidate>
    <label class="f">Product name *<input name="name" maxlength="120" required value="${esc(p?.name || "")}"></label>
-   <label class="f">Category *<select name="category" required><option value="">Choose category…</option>${catOpts}</select></label>
+   <label class="f">Category *<select name="category" required><option value="">Choose category…</option>${catOpts}${legacyOpts}</select></label>
    <div class="two"><label class="f">Price ₹ *<input name="price" type="number" inputmode="decimal" min="1" step="0.01" required value="${p?.price ?? ""}"></label>
    <label class="f">Sale price ₹ <small>(optional)</small><input name="sale_price" type="number" inputmode="decimal" min="1" step="0.01" value="${p?.sale_price ?? ""}"></label></div>
    <label class="f">Stock quantity *<input name="stock" type="number" inputmode="numeric" min="0" step="1" required value="${p?.stock ?? 1}"></label>
@@ -159,7 +182,7 @@ async function loadOrders() {
 async function fetchOrders() {
   const p = new URLSearchParams(Object.entries(filter).filter(([, v]) => v));
   try { orders = (await api("/api/admin/orders?" + p)).orders; } catch (e) { $("#ol").innerHTML = `<div class="msg err">${esc(e.message)}</div>`; return; }
-  $("#ol").innerHTML = orders.map((o) => `<button class="pcard" style="display:block;width:100%;text-align:left;font:inherit;cursor:pointer" data-o="${esc(o.order_number)}"><div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(o.order_number)}</b><b>${money(o.total)}</b></div><div class="meta">${esc(o.customer_name)} · ${esc(o.phone)} · ${fmtDate(o.created_at)}</div><div style="margin-top:6px">${badge(o.order_status)} ${badge(o.payment_status)} <span class="badge">${o.payment_method === "COD" ? "COD" : "Online"}</span></div></button>`).join("") || '<p class="empty">No orders found.</p>';
+  $("#ol").innerHTML = orders.map((o) => `<button class="pcard" style="display:block;width:100%;text-align:left;font:inherit;cursor:pointer" data-o="${esc(o.order_number)}"><div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(o.order_number)}</b><b>${money(o.total)}</b></div><div class="meta">${esc(o.customer_name)} · ${esc(o.phone)} · ${fmtDate(o.created_at)}</div><div style="margin-top:6px">${badge(o.order_status)} ${badge(o.payment_status)} <span class="badge">${o.payment_method === "COD" ? "COD" : esc(String(o.payment_provider || "RAZORPAY").toUpperCase())}</span></div></button>`).join("") || '<p class="empty">No orders found.</p>';
 }
 $("#root").addEventListener("click", (e) => { const b = e.target.closest("[data-o]"); if (b) orderSheet(orders.find((o) => o.order_number === b.dataset.o)); });
 
@@ -170,7 +193,7 @@ function orderSheet(o) {
   const close = () => { sheet.remove(); document.body.style.overflow = ""; };
   const draw = () => {
     sheet.innerHTML = `<div class="sheet-in"><div class="sheet-h"><h2>${esc(o.order_number)}</h2><button class="btn outline sm" id="x" type="button">Close</button></div><div id="m"></div>
-    <div class="panel"><div>${badge(o.order_status)} ${badge(o.payment_status)}</div><dl class="dl"><div><dt>Placed</dt><dd>${fmtDate(o.created_at)}</dd></div><div><dt>Payment</dt><dd>${o.payment_method === "COD" ? "Cash on Delivery" : "Online (Razorpay)"}</dd></div>${o.razorpay_payment_id ? `<div><dt>Payment ID</dt><dd>${esc(o.razorpay_payment_id)}</dd></div>` : ""}${o.paid_at ? `<div><dt>Paid at</dt><dd>${fmtDate(o.paid_at)}</dd></div>` : ""}</dl>
+    <div class="panel"><div>${badge(o.order_status)} ${badge(o.payment_status)}</div><dl class="dl"><div><dt>Placed</dt><dd>${fmtDate(o.created_at)}</dd></div><div><dt>Payment</dt><dd>${o.payment_method === "COD" ? "Cash on Delivery" : `Online (${esc(String(o.payment_provider || "RAZORPAY").toUpperCase())})`}</dd></div>${o.razorpay_payment_id ? `<div><dt>Razorpay Payment ID</dt><dd>${esc(o.razorpay_payment_id)}</dd></div>` : ""}${o.paytm_transaction_id ? `<div><dt>Paytm Transaction ID</dt><dd>${esc(o.paytm_transaction_id)}</dd></div>` : ""}${o.paid_at ? `<div><dt>Paid at</dt><dd>${fmtDate(o.paid_at)}</dd></div>` : ""}</dl>
     ${o.admin_note && /PAID AFTER CANCELLATION/.test(o.admin_note) ? '<div class="msg err">Customer paid after this order was cancelled. Refund in the Razorpay dashboard or contact the customer.</div>' : ""}</div>
     <div class="panel"><h2>Update status</h2><div class="stbtns">${STATUSES.map((s) => `<button class="btn ${s === o.order_status ? "primary" : "outline"} sm" data-st="${s}" ${o.order_status === "cancelled" && s !== "cancelled" ? "disabled" : ""}>${s}</button>`).join("")}</div><p class="sm muted">Cancelling releases the reserved stock. COD orders become “paid” when set to delivered.</p></div>
     <div class="panel"><h2>Customer</h2><dl class="dl"><div><dt>Name</dt><dd>${esc(o.customer_name)}</dd></div><div><dt>Phone</dt><dd><a href="tel:${esc(o.phone)}">${esc(o.phone)}</a> · <a href="https://wa.me/91${esc(o.phone)}" target="_blank" rel="noopener">WhatsApp</a></dd></div>${o.email ? `<div><dt>Email</dt><dd>${esc(o.email)}</dd></div>` : ""}<div><dt>Address</dt><dd>${esc(o.address)}<br>${esc(o.city || "")}, ${esc(o.state || "")} - ${esc(o.pincode || "")}</dd></div></dl></div>
@@ -183,7 +206,7 @@ function orderSheet(o) {
     const st = e.target.closest("[data-st]"), sn = e.target.closest("#saveNote");
     if (!st && !sn) return;
     if (st && st.dataset.st === o.order_status) return;
-    if (st && st.dataset.st === "cancelled" && !confirm("Cancel this order? Stock will be returned. If the customer already paid, refund them from Razorpay.")) return;
+    if (st && st.dataset.st === "cancelled" && !confirm("Cancel this order? Stock will be returned. If the customer already paid, check the relevant gateway dashboard and process any required refund.")) return;
     try {
       const { order } = await api("/api/admin/orders", { method: "PATCH", body: st ? { orderNumber: o.order_number, status: st.dataset.st } : { orderNumber: o.order_number, note: $("#note", sheet).value } });
       Object.assign(o, order); draw(); toast(st ? "Status updated" : "Note saved"); fetchOrders();
@@ -191,18 +214,6 @@ function orderSheet(o) {
   });
 }
 /* -------------------------------- SITE (logo + home picture) -------------------------------- */
-function faqToText(json) { try { return (JSON.parse(json || "[]") || []).map((x) => `${x.q} | ${x.a}`).join("\n"); } catch { return ""; } }
-function textToFaq(text) {
-  const out = [];
-  for (const [i, line] of String(text || "").split("\n").entries()) {
-    if (!line.trim()) continue;
-    const k = line.indexOf("|");
-    if (k < 1 || !line.slice(k + 1).trim()) throw new Error(`Line ${i + 1}: write it as  Question | Answer`);
-    out.push({ q: line.slice(0, k).trim(), a: line.slice(k + 1).trim() });
-  }
-  if (out.length > 30) throw new Error("Maximum 30 answers.");
-  return out;
-}
 async function loadSite() {
   let cur;
   try { cur = (await api("/api/admin/settings")).settings; } catch (e) { $("#pane").innerHTML = `<div class="msg err">${esc(e.message)}</div><p class="sm muted">If this keeps failing, run the new SQL (site_settings table) in Supabase once.</p>`; return; }
@@ -211,26 +222,9 @@ async function loadSite() {
   const box = (key, title, help, extra) => `<div class="panel"><h2>${title}</h2><p class="sm muted">${help}</p><div class="sprev ${extra}" id="pv_${key}"></div><input type="file" id="f_${key}" accept="image/png,image/jpeg,image/webp"><button class="btn danger sm" type="button" id="rm_${key}" style="margin-top:8px">Remove picture</button></div>`;
   $("#pane").innerHTML = box("logo_url", "Logo (top header)", "Shown at the top of every page instead of the text. A PNG with a transparent background looks best (wide, about 400 × 120).", "logo") +
     box("hero_url", "Home page picture", "The picture next to “Thakur Ji Poshak & Ladies Wear” on the home page. Use a wide photo (4:3). If empty, the plain “SJC” card is shown.", "hero") +
-    '<div id="m"></div><button class="btn primary lg" id="saveSite" type="button" style="width:100%">Save logo &amp; picture</button><p class="sm muted">Changes appear on the website within about a minute.</p>' +
-    `<div class="panel" style="margin-top:18px"><h2>SHRI JI Assistant (chat)</h2><p class="sm muted">The chat button on the shop. It answers from your products and from the answers you write below. It never sees orders.</p>
-     <label class="sw"><input type="checkbox" id="chatOn" ${cur.chat_enabled === "0" ? "" : "checked"}> Show the chat assistant on the shop</label>
-     <label class="f">Your answers <small>(one per line: Question | Answer)</small><textarea id="chatFaq" rows="8" placeholder="Do you give returns? | Write your real return policy here&#10;Shop timing? | 10 AM to 8 PM">${esc(faqToText(cur.chat_faq))}</textarea></label>
-     <p class="sm muted" id="faqCount"></p><div id="mc"></div>
-     <button class="btn primary" id="saveChat" type="button" style="width:100%">Save assistant settings</button>
-     <p class="sm muted">Only write policies and facts that are true. The assistant will not make up delivery times or return rules; it says "ask the shop" if there is no answer here.</p></div>`;
+    '<div id="m"></div><button class="btn primary lg" id="saveSite" type="button" style="width:100%">Save changes</button><p class="sm muted">Changes appear on the website within about a minute.</p>';
   const draw = () => { for (const k of Object.keys(slots)) { const s = slots[k]; $("#pv_" + k).innerHTML = s ? `<img src="${esc(s.preview || s.url)}" alt="${k === "logo_url" ? "Logo" : "Home picture"} preview">` : '<span class="muted sm">No picture (default is shown)</span>'; $("#rm_" + k).hidden = !s; } };
   draw();
-  const countFaq = () => { try { $("#faqCount").textContent = `${textToFaq($("#chatFaq").value).length} answer(s) ready`; } catch (e) { $("#faqCount").textContent = e.message; } };
-  $("#chatFaq").addEventListener("input", countFaq); countFaq();
-  $("#saveChat").addEventListener("click", async () => {
-    const b = $("#saveChat"); b.disabled = true; msg($("#mc"), "");
-    try {
-      const faq = textToFaq($("#chatFaq").value);
-      const d = await api("/api/admin/settings", { method: "PATCH", body: { chat_enabled: $("#chatOn").checked ? "1" : "0", chat_faq: faq } });
-      Object.assign(cur, d.settings); toast("Assistant settings saved"); msg($("#mc"), "Saved. Changes appear within about a minute.", "ok");
-    } catch (err) { msg($("#mc"), err.message); }
-    b.disabled = false;
-  });
   for (const k of Object.keys(slots)) {
     $("#f_" + k).addEventListener("change", async (e) => {
       const file = e.target.files[0]; e.target.value = ""; if (!file) return; msg($("#m"), "");

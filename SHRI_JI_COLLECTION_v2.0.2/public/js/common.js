@@ -69,6 +69,85 @@ export async function payOnline({ orderNumber, razorpay, prefill, onPaid, onProb
   rzp.open();
 }
 
+// ---------- Paytm JS Checkout ----------
+function loadPaytm(host, mid) {
+  if (window.Paytm?.CheckoutJS) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-paytm-checkout="true"]');
+    if (existing) {
+      existing.addEventListener("load", resolve, { once: true });
+      existing.addEventListener("error", () => reject(new Error("Could not load Paytm checkout. Please try again.")), { once: true });
+      if (window.Paytm?.CheckoutJS) resolve();
+      return;
+    }
+    const s = document.createElement("script");
+    s.dataset.paytmCheckout = "true";
+    s.src = `${host}/merchantpgpui/checkoutjs/merchants/${encodeURIComponent(mid)}.js`;
+    s.crossOrigin = "anonymous";
+    s.onload = () => window.Paytm?.CheckoutJS ? resolve() : reject(new Error("Paytm checkout did not initialize."));
+    s.onerror = () => reject(new Error("Could not load Paytm checkout. Please check your internet connection."));
+    document.head.appendChild(s);
+  });
+}
+
+/** Launch Paytm CheckoutJS. Browser callback data is never accepted as proof of payment;
+ * the backend re-queries Paytm's Transaction Status API and reconciles the result. */
+export async function payWithPaytm({ orderNumber, paytm, onPaid, onProblem, onPending, onDismiss }) {
+  if (!paytm?.host || !paytm?.mid || !paytm?.orderId || !paytm?.txnToken || !paytm?.amount) {
+    throw new Error("Paytm checkout details are incomplete. Open My Orders and retry.");
+  }
+  await loadPaytm(paytm.host, paytm.mid);
+  const checkout = window.Paytm?.CheckoutJS;
+  if (!checkout) throw new Error("Paytm checkout is unavailable. Please retry.");
+
+  let settled = false;
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const reconcile = async (eventName) => {
+    if (settled) return;
+    // Paytm may notify before its status API has reached a final state, so reconcile and retry briefly.
+    try {
+      let result;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        result = await api("/api/paytm?action=verify", { method: "POST", body: { orderNumber } });
+        if (result.status === "paid") {
+          settled = true;
+          onPaid?.();
+          return;
+        }
+        if (result.status === "failed") {
+          settled = true;
+          onProblem?.("Paytm reports that this payment failed. Your order is saved; you can retry from My Orders.");
+          return;
+        }
+        if (attempt < 2) await sleep(1400);
+      }
+      settled = true;
+      if (eventName && /CLOSE|CANCEL|FAIL/i.test(String(eventName))) {
+        onDismiss?.();
+      } else {
+        onPending?.("Payment status is still pending. Do not pay again yet; check My Orders in a few moments.");
+      }
+    } catch {
+      settled = true;
+      onPending?.("We could not confirm the payment yet. Do not pay again until you check My Orders.");
+    }
+  };
+
+  const config = {
+    root: "",
+    flow: "DEFAULT",
+    data: { orderId: paytm.orderId, token: paytm.txnToken, tokenType: "TXN_TOKEN", amount: paytm.amount },
+    handler: { notifyMerchant: (eventName) => { void reconcile(eventName); } },
+  };
+  await new Promise((resolve, reject) => {
+    try {
+      checkout.onLoad(() => {
+        checkout.init(config).then(() => { checkout.invoke(); resolve(); }).catch(() => reject(new Error("Could not open Paytm checkout. Please retry from My Orders.")));
+      });
+    } catch { reject(new Error("Could not open Paytm checkout. Please retry from My Orders.")); }
+  });
+}
+
 // ---------- header / footer ----------
 function init() {
   const h = $("#hdr"), f = $("#ftr");

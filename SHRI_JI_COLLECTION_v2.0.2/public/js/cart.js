@@ -2,7 +2,7 @@ import { api, cart, esc, money, $, msg } from "./common.js";
 import { effPrice, imgTag } from "./render.js";
 
 const box = $("#box");
-let products = {}, shipping = { flat: 0, freeAbove: null };
+let products = {}, shipping = { under499: 50, from499: 40, midFrom: 499, freeAbove: 1000 };
 
 async function load() {
   const items = cart.read();
@@ -35,13 +35,13 @@ function draw() {
       <div class="ctl">${l.bad ? "" : `<div class="qty"><button type="button" data-a="dec" data-id="${i.id}" data-size="${esc(i.size)}" aria-label="Decrease quantity">−</button><output>${l.qty}</output><button type="button" data-a="inc" data-id="${i.id}" data-size="${esc(i.size)}" aria-label="Increase quantity">+</button></div>`}
       <button class="rm" type="button" data-a="rm" data-id="${i.id}" data-size="${esc(i.size)}">Remove</button></div></div></div>`;
   }).join("");
-  const ship = shipping.freeAbove && sub >= shipping.freeAbove ? 0 : shipping.flat;
+  const ship = sub >= shipping.freeAbove ? 0 : sub >= shipping.midFrom ? shipping.from499 : shipping.under499;
   box.innerHTML = `<div class="cartgrid"><div class="panel">${rows}</div><div class="panel"><h2>Order summary</h2>
     ${trimmed ? '<div class="msg info">Some quantities were reduced to the stock we have.</div>' : ""}
     <div class="tot"><span>Subtotal</span><span>${money(sub)}</span></div>
     <div class="tot"><span>Delivery</span><span>${ship ? money(ship) : "Free"}</span></div>
     <div class="tot big"><span>Total</span><span>${money(sub + ship)}</span></div>
-    ${shipping.freeAbove && sub < shipping.freeAbove ? `<p class="sm muted">Free delivery above ${money(shipping.freeAbove)}.</p>` : ""}
+    ${sub < shipping.freeAbove ? `<p class="sm muted">Add ${money(shipping.freeAbove - sub)} more to unlock free delivery.</p>` : `<p class="sm muted">You unlocked free delivery.</p>`}
     <p class="sm muted">Final price and stock are confirmed when you place the order.</p>
     ${blocked ? '<div class="msg err">Please remove the unavailable item(s) to continue.</div>' : ""}
     <a class="btn primary lg" style="width:100%;${blocked ? "pointer-events:none;opacity:.55" : ""}" href="/checkout" ${blocked ? 'aria-disabled="true"' : ""}>Proceed to checkout</a>

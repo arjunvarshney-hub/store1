@@ -5,16 +5,30 @@ import crypto from "node:crypto";
 import * as v from "../api/_validate.js";
 import { verifyCheckoutSignature, verifyWebhookSignature } from "../api/_razorpay.js";
 import { esc, effPrice, safeUrl, cardHtml } from "../public/js/render.js";
-import { CATEGORIES, GROUPS } from "../public/js/categories.js";
+import { CATEGORIES, GROUPS, LEGACY_CATEGORIES, bySlug } from "../public/js/categories.js";
+import { shippingForSubtotal, shippingRule } from "../api/_lib.js";
 import { productPage, listingPage, homePage } from "../api/_layout.js";
 
 const throwsStatus = (fn, status = 400) => assert.throws(fn, (e) => e.status === status);
 const PFX = "https://abc.supabase.co/storage/v1/object/public/product-images/";
 const goodCustomer = { name: "Ram Kumar", phone: "+91 99278 92667", email: "R@Example.com", address: "House 4, Tirth Mandir road", city: "Sambhal", state: "Uttar Pradesh", pincode: "244303" };
 
-test("categories: all 18 required categories present, in 2 groups", () => {
-  assert.equal(CATEGORIES.length, 18); assert.equal(GROUPS.length, 2);
-  for (const n of ["Laddu Gopal Poshak", "Mukut", "Thakur Ji Shringar", "Kurti", "Fall and Astar", "Dress Material"]) assert.ok(CATEGORIES.some((c) => c.name === n), n);
+test("customer-facing categories prioritize Thakur Ji and hide retired Ladies Wear categories", () => {
+  assert.equal(GROUPS.length, 2);
+  for (const n of ["Laddu Gopal Poshak", "Krishna Poshak", "Devi Poshak", "Mukut", "Mala", "Necklace", "Bansuri", "Jhula", "Singhasan", "Thakur Ji Shringar", "Other Thakur Ji Accessories", "Kurti", "Suit", "Dupatta", "Plazo"]) assert.ok(CATEGORIES.some((c) => c.name === n), n);
+  for (const n of ["Fall and Astar", "Dress Material", "Maxi", "Gown", "Saree"]) assert.ok(!CATEGORIES.some((c) => c.name === n), n);
+  assert.ok(LEGACY_CATEGORIES.some((c) => c.slug === "dress-material"));
+  assert.equal(bySlug["dress-material"], undefined);
+});
+test("delivery charges match exact subtotal boundaries", () => {
+  const rule = shippingRule();
+  assert.equal(shippingForSubtotal(0, rule), 50);
+  assert.equal(shippingForSubtotal(300, rule), 50);
+  assert.equal(shippingForSubtotal(498.99, rule), 50);
+  assert.equal(shippingForSubtotal(499, rule), 40);
+  assert.equal(shippingForSubtotal(999.99, rule), 40);
+  assert.equal(shippingForSubtotal(1000, rule), 0);
+  assert.equal(shippingForSubtotal(1200, rule), 0);
 });
 test("customer validation: normalises phone/email, rejects bad input", () => {
   const c = v.customer(goodCustomer);

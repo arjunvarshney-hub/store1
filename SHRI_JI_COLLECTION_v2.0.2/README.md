@@ -36,8 +36,9 @@ tests/             unit + API tests (npm test) and a browser E2E suite (npm run 
 | `RAZORPAY_WEBHOOK_SECRET` | the secret *you type* when creating the webhook (step 4) |
 | `CRON_SECRET` | any long random string (protects the nightly clean-up job) |
 | `SITE_URL` | your final address, e.g. `https://www.shrijicollection.in` (no trailing `/`) |
-| `SHIPPING_FLAT` *(optional)* | delivery charge in ₹ (default `0` = free) |
-| `FREE_SHIPPING_ABOVE` *(optional)* | order value above which delivery is free |
+| `SHIPPING_UNDER_499` *(optional)* | delivery charge below ₹499 (default `50`) |
+| `SHIPPING_499_TO_999` *(optional)* | delivery charge from ₹499 to ₹999.99 (default `40`) |
+| `FREE_SHIPPING_ABOVE` *(optional)* | free delivery threshold (default `1000`) |
 
 Never commit a real `.env`; `.gitignore` already excludes it. See `.env.example`.
 
@@ -75,7 +76,13 @@ How payment safety works: the server computes the amount from database prices an
 4. **Custom domain:** Vercel → project → *Settings → Domains → Add* → follow the DNS instructions at your domain provider (an `A` record to `76.76.21.21` for the root domain and a `CNAME` to `cname.vercel-dns.com` for `www`; Vercel shows the exact values). Then set `SITE_URL` to the final address, redeploy, and update Supabase *Site URL / Redirect URLs* and the Razorpay webhook URL.
 5. Region is set to Mumbai (`bom1`) in `vercel.json`, close to Supabase's Mumbai region.
 
-## 5. Test the live site (checklist)
+## 5. Apply the delivery-tier upgrade on an existing Supabase project
+
+Before deploying the updated code, take a Supabase backup (or confirm point-in-time recovery is available), then open **SQL Editor → New query** and run `migrations/20261010_delivery_tiers.sql`. This migration adds/replaces the new eight-argument `create_order` function and does **not** drop/recreate tables or alter existing order rows. The old seven-argument function is intentionally left in place for rollback compatibility. Verify the query succeeds before deploying the updated app. A fresh installation should use the updated `supabase.sql` instead.
+
+Default delivery pricing uses the merchandise subtotal after sale prices and before delivery: below ₹499 = ₹50; ₹499 through ₹999.99 = ₹40; ₹1,000 or above = free. The browser displays an estimate, but the database transaction calculates and stores the final delivery amount.
+
+## 6. Test the live site (checklist)
 1. Open the site: home page lists categories; `/robots.txt` and `/sitemap.xml` open.
 2. Sign up / log in / log out with a normal customer email.
 3. `/admin` as customer → "Access denied". As owner → Products tab opens.
@@ -110,26 +117,3 @@ npx vercel dev      # run against your real Supabase (needs .env values)
 
 ## Known limitations
 See `CHANGELOG.md` → "Not done / needs live verification" and `AUDIT.md`.
-
-
----
-
-## v3: SHRI JI Assistant, reviews and deployment notes
-
-**Repo layout:** in GitHub this project lives inside the folder `SHRI_JI_COLLECTION_v2.0.2/`. In Vercel set **Root Directory** to that folder.
-
-### Customer reviews (how it works)
-* Customers write a name, 1 to 5 stars and a comment on a product page. The review is **pending** and invisible until you approve it in **/admin → Reviews**.
-* Only approved reviews count in the stars, the average and the Google product data. Nothing is invented: a product with no approved reviews shows "No reviews yet".
-* Reviews are labelled "not purchase-verified".
-* Spam limits: a hidden trap field, a burst limit, and (after running `migrations/20261011_review_abuse_controls.sql`) 3 reviews per hour and 1 per product per day per visitor.
-* Run the review SQL files from `migrations/` once in the Supabase SQL Editor (order: `20261010_...`, then `20261011_...`).
-
-### SHRI JI Assistant (chat button)
-See `AI_ASSISTANT_SETUP.md`. In short: it works right away in "store answers" mode; add `ANTHROPIC_API_KEY` in Vercel to switch on live AI (live AI is untested). Manage it in **/admin → Site → SHRI JI Assistant**.
-
-### New optional environment variables (private)
-`ANTHROPIC_API_KEY`, `AI_MODEL`, `CHAT_DAILY_AI_LIMIT`, `RATE_LIMIT_SALT`. See `.env.example`.
-
-### Safe release routine
-Follow `DEPLOYMENT_CHECKLIST.md` (branch → Preview → test → merge). The honest audit of what is done and not done is in `CURRENT_AUDIT.md`.

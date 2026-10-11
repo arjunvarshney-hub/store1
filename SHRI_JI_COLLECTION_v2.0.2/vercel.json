@@ -99,10 +99,6 @@
     {
       "source": "/api/site-settings",
       "destination": "/api/site?action=settings"
-    },
-    {
-      "source": "/api/chat",
-      "destination": "/api/site?action=chat"
     }
   ],
   "crons": [
@@ -137,7 +133,7 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' https://checkout.razorpay.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co https://*.razorpay.com; font-src 'self' data:; connect-src 'self' https://*.razorpay.com https://lumberjack.razorpay.com; frame-src https://api.razorpay.com https://checkout.razorpay.com; form-action 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'"
+          "value": "default-src 'self'; script-src 'self' https://checkout.razorpay.com https://securestage.paytmpayments.com https://secure.paytmpayments.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co https://*.razorpay.com; font-src 'self' data:; connect-src 'self' https://*.razorpay.com https://lumberjack.razorpay.com https://securestage.paytmpayments.com https://secure.paytmpayments.com; frame-src https://api.razorpay.com https://checkout.razorpay.com https://securestage.paytmpayments.com https://secure.paytmpayments.com; form-action 'self' https://securestage.paytmpayments.com https://secure.paytmpayments.com; base-uri 'self'; object-src 'none'; frame-ancestors 'none'"
         }
       ]
     },

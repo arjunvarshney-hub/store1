@@ -1,4 +1,4 @@
-import { api, esc, money, $, $$, msg, badge, fmtDate, payOnline } from "./common.js";
+import { api, esc, money, $, $$, msg, badge, fmtDate, payOnline, payWithPaytm } from "./common.js";
 import { imgTag } from "./render.js";
 
 const box = $("#box");
@@ -74,7 +74,7 @@ async function orderDetail(num) {
   const canPay = o.payment_method === "ONLINE" && ["pending", "failed"].includes(o.payment_status) && o.order_status === "pending";
   const canCancel = o.order_status === "pending" && o.payment_status !== "paid";
   box.innerHTML = `<a class="link" href="/account">‹ My orders</a><h1 class="h1">Order ${esc(o.order_number)}</h1>${banner ? `<div class="msg ${banner[1]}">${esc(banner[0])}</div>` : ""}<div id="m"></div>
-  <div class="panel"><div>${badge(o.order_status)} ${badge(o.payment_status === "paid" ? "paid" : o.payment_status)}</div><p class="sm muted">Placed ${fmtDate(o.created_at)} · ${o.payment_method === "COD" ? "Cash on Delivery" : "Online payment"}</p>
+  <div class="panel"><div>${badge(o.order_status)} ${badge(o.payment_status === "paid" ? "paid" : o.payment_status)}</div><p class="sm muted">Placed ${fmtDate(o.created_at)} · ${o.payment_method === "COD" ? "Cash on Delivery" : `Online (${esc(String(o.payment_provider || "RAZORPAY").toUpperCase())})`}</p>
    ${canPay ? '<button class="btn primary lg" style="width:100%" id="pay" type="button">Pay now</button>' : ""}${canCancel ? '<button class="btn danger" style="width:100%;margin-top:8px" id="cancel" type="button">Cancel order</button>' : ""}</div>
   <div class="panel"><h2>Items</h2>${o.items.map((i) => `<div class="row"><div>${imgTag(i.image, i.name, { w: 76, h: 76 })}</div><div><div class="nm">${i.slug ? `<a href="/product/${esc(i.slug)}">${esc(i.name)}</a>` : esc(i.name)}</div><div class="muted sm">${i.size ? "Size: " + esc(i.size) + " · " : ""}Qty ${i.qty ?? 1}</div><b>${money((i.unit_price ?? i.price ?? 0) * (i.qty ?? 1))}</b></div></div>`).join("")}
    <div class="tot"><span>Subtotal</span><span>${money(o.subtotal)}</span></div><div class="tot"><span>Delivery</span><span>${Number(o.shipping) ? money(o.shipping) : "Free"}</span></div><div class="tot big"><span>Total</span><span>${money(o.total)}</span></div></div>
@@ -83,10 +83,18 @@ async function orderDetail(num) {
   $("#pay")?.addEventListener("click", async (e) => {
     e.target.disabled = true; msg($("#m"), "");
     try {
-      const d = await api("/api/pay", { method: "POST", body: { orderNumber: o.order_number } });
-      await payOnline({ orderNumber: o.order_number, razorpay: d.razorpay, prefill: { name: o.customer_name, contact: o.phone, email: o.email || undefined },
+      const provider = String(o.payment_provider || "RAZORPAY").toUpperCase();
+      const d = await api("/api/pay", { method: "POST", body: { orderNumber: o.order_number, paymentProvider: provider } });
+      const common = {
+        orderNumber: o.order_number,
         onPaid: () => (location.href = `/account?order=${encodeURIComponent(o.order_number)}&placed=paid`),
-        onProblem: (t) => { msg($("#m"), t); e.target.disabled = false; }, onDismiss: () => { e.target.disabled = false; } });
+        onProblem: (t) => { msg($("#m"), t); e.target.disabled = false; },
+        onPending: (t) => { msg($("#m"), t, "info"); e.target.disabled = false; },
+        onDismiss: () => { e.target.disabled = false; },
+      };
+      if (d.paytm) await payWithPaytm({ ...common, paytm: d.paytm });
+      else if (d.razorpay) await payOnline({ ...common, razorpay: d.razorpay, prefill: { name: o.customer_name, contact: o.phone, email: o.email || undefined } });
+      else throw new Error("Payment could not be started. Please retry from My Orders.");
     } catch (err) { msg($("#m"), err.message); e.target.disabled = false; }
   });
   $("#cancel")?.addEventListener("click", async (e) => {

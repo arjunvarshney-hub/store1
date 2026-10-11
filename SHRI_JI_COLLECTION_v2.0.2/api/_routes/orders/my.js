@@ -2,7 +2,7 @@
 import { route, requireUser, admin, jsonBody, HttpError } from "../../_lib.js";
 import { orderNumber } from "../../_validate.js";
 
-const COLS = "order_number,created_at,customer_name,phone,email,address,city,state,pincode,payment_method,payment_status,order_status,items,subtotal,shipping,total";
+const COLS = "order_number,created_at,customer_name,phone,email,address,city,state,pincode,payment_method,payment_provider,paytm_order_id,paytm_transaction_id,payment_status,order_status,items,subtotal,shipping,total";
 
 export default route(["GET", "POST"], async (req, res) => {
   const user = await requireUser(req, res);

@@ -134,9 +134,18 @@ export function route(methods, fn, { csrf = true } = {}) {
 }
 
 export const shippingRule = () => ({
-  flat: Math.max(0, Number(process.env.SHIPPING_FLAT || 0) || 0),
-  freeAbove: process.env.FREE_SHIPPING_ABOVE ? Number(process.env.FREE_SHIPPING_ABOVE) || null : null,
+  under499: Math.max(0, Number(process.env.SHIPPING_UNDER_499 ?? 50) || 0),
+  from499: Math.max(0, Number(process.env.SHIPPING_499_TO_999 ?? 40) || 0),
+  freeAbove: Math.max(0, Number(process.env.FREE_SHIPPING_ABOVE ?? 1000) || 1000),
+  midFrom: 499,
 });
+
+export const shippingForSubtotal = (subtotal, rule = shippingRule()) => {
+  const amount = Math.max(0, Number(subtotal) || 0);
+  if (amount >= rule.freeAbove) return 0;
+  if (amount >= rule.midFrom) return rule.from499;
+  return rule.under499;
+};
 
 /** Maps Supabase auth errors to messages a customer can act on. */
 export function friendlyAuthError(e, fallback) {
@@ -149,25 +158,3 @@ export function friendlyAuthError(e, fallback) {
   return fallback;
 }
 export const randomId = () => crypto.randomUUID();
-
-// ---------- abuse controls ----------
-/** One-way hash of the caller (IP + user agent). We never store or log the raw IP. */
-export function callerHash(req) {
-  const ip = String(req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || req.socket?.remoteAddress || "").split(",")[0].trim();
-  const salt = process.env.RATE_LIMIT_SALT || process.env.SUPABASE_URL || "sjc";
-  return crypto.createHash("sha256").update(`${salt}|${ip}|${String(req.headers["user-agent"] || "").slice(0, 80)}`).digest("hex").slice(0, 32);
-}
-const hits = new Map();
-/**
- * Best-effort sliding-window limiter. Serverless instances do not share memory, so this is a cost/abuse
- * brake per instance, not a perfect global limit (reviews additionally use a database check).
- * Returns true when the request is allowed.
- */
-export function rateLimit(key, max, windowMs, now = Date.now()) {
-  const arr = (hits.get(key) || []).filter((t) => now - t < windowMs);
-  if (arr.length >= max) { hits.set(key, arr); return false; }
-  arr.push(now); hits.set(key, arr);
-  if (hits.size > 5000) for (const [k, v] of hits) if (!v.length || now - v[v.length - 1] > windowMs) hits.delete(k);
-  return true;
-}
-export const _resetRateLimits = () => hits.clear();

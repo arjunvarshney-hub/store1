@@ -1,6 +1,6 @@
 // Input validation. Pure functions: easy to unit-test, never trust the browser.
 import { HttpError } from "./_lib.js";
-import { bySlug } from "../public/js/categories.js";
+import { allBySlug } from "../public/js/categories.js";
 
 const CTRL = /[\u0000-\u001f\u007f]/g;
 export function text(v, field, { min = 0, max = 200, required = false } = {}) {
@@ -71,7 +71,7 @@ export function sizes(v) {
 export function product(b, prefix = imagePrefix()) {
   b = b && typeof b === "object" ? b : {};
   const category = String(b.category ?? "");
-  if (!bySlug[category]) throw new HttpError(400, "Please choose a valid category.");
+  if (!allBySlug[category]) throw new HttpError(400, "Please choose a valid category.");
   const price = Number(b.price);
   if (!(price > 0 && price <= 1000000)) throw new HttpError(400, "Price must be greater than 0.");
   let sale_price = null;
@@ -105,31 +105,16 @@ export function imageKind(buf) {
 }
 
 /** Site settings (logo / home picture): empty string = remove, otherwise must be an image from OUR bucket. */
-export const IMAGE_SETTING_KEYS = ["logo_url", "hero_url"];
-export const SETTING_KEYS = [...IMAGE_SETTING_KEYS, "chat_enabled", "chat_faq"];
-/** Parses/cleans the FAQ list the owner edits in the admin (max 30 entries). Returns an array of {q,a}. */
-export function faqList(input) {
-  let arr = input;
-  if (typeof input === "string") { try { arr = JSON.parse(input || "[]"); } catch { throw new HttpError(400, "FAQ format is invalid."); } }
-  if (!Array.isArray(arr)) throw new HttpError(400, "FAQ format is invalid.");
-  if (arr.length > 30) throw new HttpError(400, "Maximum 30 FAQ answers.");
-  return arr.map((x) => ({ q: text(x?.q, "FAQ question", { min: 3, max: 200, required: true }), a: text(x?.a, "FAQ answer", { min: 3, max: 600, required: true }) }));
-}
-/** Site settings: images must live in OUR bucket (or "" to remove); chat_enabled is "1"/"0"; chat_faq is a validated list. */
+export const SETTING_KEYS = ["logo_url", "hero_url"];
 export function siteSettings(b, prefix = imagePrefix()) {
   b = b && typeof b === "object" ? b : {};
   const out = {};
-  for (const k of IMAGE_SETTING_KEYS) {
+  for (const k of SETTING_KEYS) {
     if (b[k] === undefined) continue;
     const v = b[k] === null ? "" : b[k];
     if (typeof v !== "string" || (v !== "" && (!v.startsWith(prefix) || v.length > 400))) throw new HttpError(400, "Invalid image. Please upload it using the uploader.");
     out[k] = v;
   }
-  if (b.chat_enabled !== undefined) {
-    if (!["0", "1", 0, 1, true, false].includes(b.chat_enabled)) throw new HttpError(400, "Invalid assistant setting.");
-    out.chat_enabled = b.chat_enabled === "1" || b.chat_enabled === 1 || b.chat_enabled === true ? "1" : "0";
-  }
-  if (b.chat_faq !== undefined) out.chat_faq = JSON.stringify(faqList(b.chat_faq));
   if (!Object.keys(out).length) throw new HttpError(400, "Nothing to update.");
   return out;
 }

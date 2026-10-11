@@ -36,8 +36,17 @@ export default route(["GET", "POST", "PATCH", "DELETE"], async (req, res) => {
     await removeImages(db, (cur.image_urls || []).filter((u) => !merged.image_urls.includes(u)));
     return res.json({ product: data });
   }
+  // Preserve products referenced by historical orders; old receipts must remain intelligible.
+  const { data: linked, error: orderCheckError } = await db.from("orders")
+    .select("id").contains("items", [{ product_id: id }]).limit(1);
+  if (orderCheckError) throw orderCheckError;
+  if (linked?.length) {
+    const { data, error } = await db.from("products").update({ active: false }).eq("id", id).select().single();
+    if (error) throw error;
+    return res.json({ ok: true, archived: true, product: data, message: "This product is linked to an order, so it was archived instead of deleted." });
+  }
   const { error } = await db.from("products").delete().eq("id", id);
   if (error) throw error;
   await removeImages(db, cur.image_urls || []);
-  res.json({ ok: true });
+  res.json({ ok: true, archived: false });
 });

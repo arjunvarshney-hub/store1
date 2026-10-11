@@ -17,7 +17,7 @@ export function shell({ title, desc, canonical, robots = "index,follow", body, j
 <meta name="twitter:card" content="${img ? "summary_large_image" : "summary"}">
 <link rel="stylesheet" href="/style.css">${jsonld.map(ld).join("")}</head><body>
 <header class="top" id="hdr">${headerHtml({ logo: settings.logo_url })}</header><main id="main">${body}</main><footer class="foot" id="ftr">${footerHtml()}</footer>
-<script type="module" src="/js/common.js"></script>${settings.chat_enabled === "0" ? "" : '<script type="module" src="/js/chat.js"></script>'}</body></html>`;
+<script type="module" src="/js/common.js"></script></body></html>`;
 }
 
 const crumbs = (site, list) => ({
@@ -33,14 +33,14 @@ const pager = (base, page, total, size) => {
 
 export function homePage(site, { products, settings = {} }) {
   const heroArt = safeUrl(settings.hero_url) ? `<div class="hero-art has-img"><img src="${esc(settings.hero_url)}" alt="${BRAND}" width="800" height="600" fetchpriority="high"></div>` : `<div class="hero-art" aria-hidden="true"><div class="ring"><span>SJC</span></div><small>SHRI JI COLLECTION</small></div>`;
-  const body = `<section class="hero"><div class="wrap hero-in"><div class="hero-txt"><p class="eyebrow">Sarai Tareen, Sambhal</p><h1>Thakur Ji Poshak &amp; Ladies Wear</h1><div class="cta"><a class="btn primary lg" href="/category/thakur-ji-poshak">Thakur Ji Poshak</a><a class="btn outline lg" href="/category/ladies-wear">Ladies Wear</a></div></div>${heroArt}</div></section>
+  const body = `<section class="hero"><div class="wrap hero-in"><div class="hero-txt"><p class="eyebrow">Sarai Tareen, Sambhal</p><h1>Thakur Ji Poshak &amp; Shringar</h1><p class="lead">Beautiful poshak and shringar for Laddu Gopal Ji, with carefully selected devotional accessories.</p><div class="cta"><a class="btn primary lg" href="/category/thakur-ji-poshak">Shop Thakur Ji Poshak</a><a class="btn outline lg" href="/category/ladies-wear">Explore Ladies Wear</a></div></div>${heroArt}</div></section>
 <nav class="catstrip" aria-label="Browse categories"><div class="wrap"><div class="chips">${CATEGORIES.map((c) => `<a class="chip" href="/category/${c.slug}">${esc(c.name)}</a>`).join("")}</div></div></nav>
 <section class="wrap sec"><div class="sec-title"><p class="eyebrow dark">Just in</p><h2 class="h2">New arrivals</h2></div>${products.length ? `<div class="grid">${products.map(cardHtml).join("")}</div><div class="center more-wrap"><a class="btn outline" href="/shop">View all products</a></div>` : '<p class="muted center">New products are coming soon. Please check back shortly or message us on WhatsApp.</p>'}</section>
 <section class="band"><div class="wrap trust"><div><b>Cash on Delivery</b><span>Pay when your order arrives</span></div><div><b>UPI / Cards</b><span>Secure online payment via Razorpay</span></div><div><b>Track orders</b><span>See status in My Orders</span></div></div></section>
 <section class="wrap sec" id="contact"><div class="sec-title"><p class="eyebrow dark">Visit or say hello</p><h2 class="h2">Contact us</h2></div><address class="contact center"><b>${BRAND}</b><br>तीर्थ मंदिर, सराय तरीन (संभल) – 244303<br><a href="tel:+919927892667">9927892667</a> &middot; <a href="tel:+919758673114">9758673114</a></address><div class="center"><a class="btn primary" href="https://wa.me/919927892667" target="_blank" rel="noopener">Chat on WhatsApp</a></div></section>`;
   return shell({
     settings,
-    title: `${BRAND} | Thakur Ji Poshak & Ladies Wear, Sarai Tareen Sambhal`,
+    title: `${BRAND} | Thakur Ji Poshak & Shringar, Sarai Tareen Sambhal`,
     desc: "SHRI JI COLLECTION, Sarai Tareen (Sambhal): Laddu Gopal poshak, Krishna poshak, mukut, mala, shringar and ladies wear - kurti, suit, dupatta. COD and online payment.",
     canonical: site + "/", body,
     jsonld: [
@@ -90,7 +90,7 @@ function reviewSection(data = {}) {
   const intro = !data.configured
     ? "Customer ratings and reviews are not available right now. Please check back soon."
     : count > 0
-      ? `${count} customer ${count === 1 ? "review" : "reviews"} · written by customers, not purchase-verified`
+      ? `${count} customer ${count === 1 ? "review" : "reviews"}`
       : "No reviews yet. Be the first to share your experience.";
   const cards = reviews.map((r) => {
     const date = r.created_at && Number.isFinite(Date.parse(r.created_at))
@@ -98,7 +98,7 @@ function reviewSection(data = {}) {
     return `<article class="review-card"><div class="review-head"><b>${esc(r.customer_name)}</b><time class="muted sm"${date ? ` datetime="${esc(new Date(r.created_at).toISOString())}"` : ""}>${esc(date)}</time></div><div class="review-rating">${starsHtml(r.rating)} <span class="sm">${Number(r.rating)}/5</span></div><p>${esc(r.comment).replace(/\n/g, "<br>")}</p></article>`;
   }).join("");
   const form = data.configured ? `<form id="reviewForm" class="review-form" novalidate>
-    <h3>Write a review</h3><p class="sm muted">Tell other customers about your experience. Reviews are checked by our shop before appearing publicly. They are written by customers and are not purchase-verified.</p>
+    <h3>Write a review</h3><p class="sm muted">Tell other customers about your experience. Reviews are checked by our shop before appearing publicly.</p>
     <label class="f">Your name *<input name="name" autocomplete="name" maxlength="80" minlength="2" required placeholder="Enter your name"></label>
     <fieldset class="rating-field"><legend>Your rating *</legend><div class="rating-pick">${[1,2,3,4,5].map((n) => `<label><input type="radio" name="rating" value="${n}" required><span aria-hidden="true">★</span><span class="sr-only">${n} ${n === 1 ? "star" : "stars"}</span></label>`).join("")}</div></fieldset>
     <label class="f">Your review *<textarea name="comment" required minlength="5" maxlength="1000" placeholder="What did you like or what could be better? (5–1,000 characters)"></textarea></label>

@@ -31,6 +31,30 @@ export async function createRazorpayOrder({ amountPaise, receipt, notes }) {
   return r.json();
 }
 
+/** Fetch a payment directly from Razorpay; a signed browser callback alone is not enough to mark paid. */
+export async function fetchRazorpayPayment(paymentId) {
+  if (!razorpayConfigured()) throw new HttpError(503, "Razorpay is not configured right now.");
+  const auth = Buffer.from(`${process.env.RAZORPAY_KEY_ID}:${process.env.RAZORPAY_KEY_SECRET}`).toString("base64");
+  let r;
+  try {
+    r = await fetch(`https://api.razorpay.com/v1/payments/${encodeURIComponent(paymentId)}`, {
+      method: "GET",
+      headers: { Authorization: `Basic ${auth}`, Accept: "application/json" },
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch {
+    throw new HttpError(502, "Could not verify payment status with Razorpay. Do not pay again yet; check My Orders shortly.");
+  }
+  if (!r.ok) {
+    console.error("Razorpay payment fetch failed, status", r.status);
+    throw new HttpError(502, "Could not verify payment status with Razorpay. Do not pay again yet; check My Orders shortly.");
+  }
+  let payment;
+  try { payment = await r.json(); } catch { throw new HttpError(502, "Razorpay returned an unreadable payment status."); }
+  if (!payment || payment.id !== paymentId) throw new HttpError(502, "Razorpay payment details did not match.");
+  return payment;
+}
+
 /** Returns what Checkout needs. The amount always comes from the DB order total, never from the browser. */
 export async function preparePayment(order) {
   if (!razorpayConfigured()) throw new HttpError(503, "Online payment is not available right now. Please choose Cash on Delivery.");
