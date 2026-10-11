@@ -3,6 +3,7 @@
 import { route, requireUser, admin, jsonBody, shippingRule, HttpError } from "../../_lib.js";
 import * as v from "../../_validate.js";
 import { preparePayment, razorpayConfigured } from "../../_razorpay.js";
+import { enqueueAdminNotification, processNotificationOutbox } from "../../_notifications.js";
 
 const rpcMessage = (e) => String(e?.message || "");
 
@@ -32,12 +33,20 @@ export default route(["POST"], async (req, res) => {
     if (!result) {
       if (m.includes("OUT_OF_STOCK:")) throw new HttpError(409, `Sorry, "${m.split("OUT_OF_STOCK:")[1]}" does not have enough stock. Please reduce the quantity in your cart.`);
       if (m.includes("SIZE_REQUIRED:")) throw new HttpError(400, `Please choose a size for "${m.split("SIZE_REQUIRED:")[1]}".`);
+      if (m.includes("VARIANT_REQUIRED:")) throw new HttpError(400, `Please choose a product option for "${m.split("VARIANT_REQUIRED:")[1]}".`);
+      if (m.includes("INVALID_VARIANT:")) throw new HttpError(409, `The selected option for "${m.split("INVALID_VARIANT:")[1]}" is no longer available. Please update your cart.`);
+      if (m.includes("MIN_QTY:")) { const x = m.split("MIN_QTY:")[1].split(":"); throw new HttpError(400, `Minimum order for "${x[0]}" is ${x[1]} package(s).`); }
       if (m.includes("UNAVAILABLE")) throw new HttpError(409, "One of the products in your cart is no longer available. Please review your cart.");
       if (m.includes("INVALID_ITEMS")) throw new HttpError(400, "Your cart has an invalid item.");
       throw error;
     }
   }
   const order = result.order;
+  try {
+    // The unique outbox key makes this safe when a retried idempotency key returns an existing order.
+    await enqueueAdminNotification(db, order, "new_order");
+    await processNotificationOutbox(db, { limit: 2 });
+  } catch (e) { console.error("[order-notification] queue failed", String(e?.message || "error").slice(0,120)); }
   const out = { orderNumber: order.order_number, total: Number(order.total), paymentMethod: order.payment_method, existing: !!result.existing };
   if (order.payment_method === "ONLINE" && order.payment_status !== "paid") {
     try { out.razorpay = await preparePayment(order); }

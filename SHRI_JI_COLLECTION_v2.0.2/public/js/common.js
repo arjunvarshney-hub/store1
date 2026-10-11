@@ -22,19 +22,19 @@ export const msg = (el, text, kind = "err") => { el.innerHTML = text ? `<div cla
 export const badge = (v) => `<span class="badge b-${esc(v)}">${esc(v)}</span>`;
 export const fmtDate = (d) => new Date(d).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
 
-// ---------- cart (ids/size/qty only; prices are always re-fetched from the server) ----------
+// ---------- cart (product + variant identifiers only; all prices and stock are re-fetched server-side) ----------
 const KEY = "sjc_cart_v2";
-const ok = (x) => x && Number.isSafeInteger(x.id) && x.id > 0 && Number.isInteger(x.qty) && x.qty >= 1 && x.qty <= 10 && typeof x.size === "string";
+const ok = (x) => x && Number.isSafeInteger(x.id) && x.id > 0 && Number.isInteger(x.qty) && x.qty >= 1 && x.qty <= 100 && typeof x.size === "string" && (x.variantId == null || typeof x.variantId === "string");
 export const cart = {
   read() { try { const a = JSON.parse(localStorage.getItem(KEY) || "[]"); return Array.isArray(a) ? a.filter(ok) : []; } catch { return []; } },
   write(a) { try { localStorage.setItem(KEY, JSON.stringify(a)); } catch { /* private mode */ } cart.badge(); },
-  add(id, size, qty) {
-    const a = cart.read(), x = a.find((i) => i.id === id && i.size === size);
-    if (x) x.qty = Math.min(10, x.qty + qty); else a.push({ id, size, qty: Math.min(10, qty) });
+  add(id, size, qty, variantId = "") {
+    const a = cart.read(), v = String(variantId || ""), x = a.find((i) => i.id === id && i.size === size && String(i.variantId || "") === v);
+    if (x) x.qty = Math.min(100, x.qty + qty); else a.push({ id, size, variantId: v, qty: Math.min(100, qty) });
     cart.write(a);
   },
-  setQty(id, size, qty) { cart.write(cart.read().map((i) => (i.id === id && i.size === size ? { ...i, qty: Math.max(1, Math.min(10, qty)) } : i))); },
-  remove(id, size) { cart.write(cart.read().filter((i) => !(i.id === id && i.size === size))); },
+  setQty(id, size, qty, variantId = "", min = 1) { const v = String(variantId || ""); cart.write(cart.read().map((i) => (i.id === id && i.size === size && String(i.variantId || "") === v ? { ...i, qty: Math.max(Math.max(1, Number(min) || 1), Math.min(100, qty)) } : i))); },
+  remove(id, size, variantId = "") { const v = String(variantId || ""); cart.write(cart.read().filter((i) => !(i.id === id && i.size === size && String(i.variantId || "") === v))); },
   clear() { cart.write([]); },
   count() { return cart.read().reduce((n, i) => n + i.qty, 0); },
   badge() { const el = $("#cartCount"); if (!el) return; const n = cart.count(); el.textContent = n; el.hidden = !n; },
@@ -70,35 +70,45 @@ export async function payOnline({ orderNumber, razorpay, prefill, onPaid, onProb
 }
 
 // ---------- header / footer ----------
+function bindMenu() {
+  const h = $("#hdr");
+  const btn = $("#menuBtn", h), panel = $("#menuPanel", h), bg = $("#drawerBg", h), x = $("#menuClose", h);
+  if (!btn || !panel || !bg || !x) return;
+  const set = (open) => {
+    panel.hidden = bg.hidden = !open; btn.setAttribute("aria-expanded", String(open));
+    document.body.style.overflow = open ? "hidden" : "";
+    (open ? x : btn).focus();
+  };
+  btn.addEventListener("click", () => set(panel.hidden));
+  x.addEventListener("click", () => set(false));
+  bg.addEventListener("click", () => set(false));
+  panel.addEventListener("click", (e) => e.target.closest("a") && set(false));
+  document.addEventListener("keydown", (e) => e.key === "Escape" && !panel.hidden && set(false));
+  window.matchMedia("(min-width:900px)").addEventListener("change", (m) => m.matches && !panel.hidden && set(false));
+}
 function init() {
   const h = $("#hdr"), f = $("#ftr");
   const LK = "sjc_logo_v1", cached = () => { try { return localStorage.getItem(LK) || ""; } catch { return ""; } };
   const setCache = (u) => { try { u ? localStorage.setItem(LK, u) : localStorage.removeItem(LK); } catch { /* private mode */ } };
-  if (h && !h.firstElementChild) {          // static pages (cart, checkout, account, admin): header built here
-    h.innerHTML = headerHtml({ logo: cached() });
+  const staticHeader = !!(h && !h.firstElementChild);
+  const staticFooter = !!(f && !f.firstElementChild);
+  if (staticHeader) h.innerHTML = headerHtml({ logo: cached() });
+  else if (h) setCache($(".logo-img", h)?.getAttribute("src") || "");
+  if (staticFooter) f.innerHTML = footerHtml();
+  bindMenu();
+  if (staticHeader || staticFooter) {
     fetch("/api/site-settings", { credentials: "same-origin" }).then((r) => r.json()).then((d) => {
-      const u = d?.settings?.logo_url || "", a = $(".logo", h);
-      if (a && u !== cached()) { a.innerHTML = logoHtml(u); }
+      const settings = d?.settings || {}, u = settings.logo_url || "";
+      if (staticHeader) { h.innerHTML = headerHtml({ logo: u || cached(), categories: settings.categories }); bindMenu(); }
+      else { const a = $(".logo", h); if (a && u !== cached()) a.innerHTML = logoHtml(u); }
+      if (staticFooter) f.innerHTML = footerHtml(settings.categories);
       setCache(u);
+      cart.badge();
     }).catch(() => {});
-  } else if (h) setCache($(".logo-img", h)?.getAttribute("src") || "");   // server-rendered pages keep the cache fresh
-  if (f && !f.firstElementChild) f.innerHTML = footerHtml();
-  const btn = $("#menuBtn"), panel = $("#menuPanel"), bg = $("#drawerBg"), x = $("#menuClose");
-  if (btn && panel && bg) {
-    const set = (open) => {
-      panel.hidden = bg.hidden = !open; btn.setAttribute("aria-expanded", String(open));
-      document.body.style.overflow = open ? "hidden" : "";
-      (open ? x : btn).focus();
-    };
-    btn.addEventListener("click", () => set(panel.hidden));
-    x.addEventListener("click", () => set(false));
-    bg.addEventListener("click", () => set(false));
-    panel.addEventListener("click", (e) => e.target.closest("a") && set(false));
-    document.addEventListener("keydown", (e) => e.key === "Escape" && !panel.hidden && set(false));
-    window.matchMedia("(min-width:900px)").addEventListener("change", (m) => m.matches && !panel.hidden && set(false));
   }
   cart.badge();
 }
+
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 window.addEventListener("storage", () => cart.badge());
 window.addEventListener("pageshow", () => cart.badge());

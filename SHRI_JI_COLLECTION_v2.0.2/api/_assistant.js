@@ -158,7 +158,7 @@ export function storeFacts() {
     location: "तीर्थ मंदिर, सराय तरीन (संभल) - 244303",
     phones: PHONES,
     payment_methods: ["Cash on Delivery", ...(razorpayConfigured() ? ["Online payment via Razorpay (UPI / Google Pay / cards), where enabled for the shop"] : [])],
-    delivery_charge: ship.flat ? `Rs ${ship.flat}${ship.freeAbove ? `, free above Rs ${ship.freeAbove}` : ""}` : "Free delivery (no delivery charge is configured)",
+    delivery_charge: "Below Rs 499: Rs 50; Rs 499 to Rs 999.99: Rs 40; Rs 1000 and above: free delivery.",
     how_to_order: "Open a product, choose size if shown, Add to cart, then Checkout. Login or sign up is needed to place an order.",
     order_tracking: "Log in and open My Orders (account page). The assistant cannot look up orders.",
     cancellation: "A customer can cancel their own order from My Orders only while it is still Pending and unpaid. After that, contact the shop.",

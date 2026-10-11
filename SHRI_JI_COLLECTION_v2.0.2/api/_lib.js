@@ -134,9 +134,14 @@ export function route(methods, fn, { csrf = true } = {}) {
 }
 
 export const shippingRule = () => ({
-  flat: Math.max(0, Number(process.env.SHIPPING_FLAT || 0) || 0),
-  freeAbove: process.env.FREE_SHIPPING_ABOVE ? Number(process.env.FREE_SHIPPING_ABOVE) || null : null,
+  // Source of truth is mirrored in the create_order SQL RPC. Do not use client-provided amounts.
+  tiers: [{ from: 0, charge: 50 }, { from: 499, charge: 40 }, { from: 1000, charge: 0 }],
+  flat: 50, freeAbove: 1000,
 });
+export const deliveryCharge = (subtotal) => {
+  const n = Math.max(0, Number(subtotal) || 0);
+  return n >= 1000 ? 0 : n >= 499 ? 40 : 50;
+};
 
 /** Maps Supabase auth errors to messages a customer can act on. */
 export function friendlyAuthError(e, fallback) {

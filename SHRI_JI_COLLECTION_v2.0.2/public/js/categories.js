@@ -1,4 +1,5 @@
-// Single source of truth for categories (used by the server API and the browser).
+// Shared customer taxonomy. Legacy categories remain known for old product records/admin reassignment,
+// but are deliberately omitted from all customer-facing category navigation and filters.
 export const GROUPS = [
   { slug: "thakur-ji-poshak", name: "Thakur Ji Poshak" },
   { slug: "ladies-wear", name: "Ladies Wear" },
@@ -9,22 +10,28 @@ export const CATEGORIES = [
   c("krishna-poshak", "Krishna Poshak", "thakur-ji-poshak"),
   c("devi-poshak", "Devi Poshak", "thakur-ji-poshak"),
   c("mukut", "Mukut", "thakur-ji-poshak"),
-  c("mala", "Mala", "thakur-ji-poshak"),
-  c("necklace", "Necklace", "thakur-ji-poshak"),
+  c("mala-and-necklace", "Mala and Necklace", "thakur-ji-poshak"),
   c("bansuri", "Bansuri", "thakur-ji-poshak"),
   c("jhula", "Jhula", "thakur-ji-poshak"),
   c("singhasan", "Singhasan", "thakur-ji-poshak"),
   c("thakur-ji-shringar", "Thakur Ji Shringar", "thakur-ji-poshak"),
+  c("other-thakur-ji-accessories", "Other Thakur Ji Accessories", "thakur-ji-poshak"),
   c("kurti", "Kurti", "ladies-wear"),
   c("suit", "Suit", "ladies-wear"),
   c("dupatta", "Dupatta", "ladies-wear"),
-  c("dress-material", "Dress Material", "ladies-wear"),
   c("plazo", "Plazo", "ladies-wear"),
+];
+export const LEGACY_CATEGORIES = [
+  c("mala", "Mala (legacy category)", "thakur-ji-poshak"),
+  c("necklace", "Necklace (legacy category)", "thakur-ji-poshak"),
+  c("fall-and-astar", "Fall and Astar", "ladies-wear"),
   c("maxi", "Maxi", "ladies-wear"),
   c("gown", "Gown", "ladies-wear"),
-  c("fall-and-astar", "Fall and Astar", "ladies-wear"),
+  c("saree", "Saree", "ladies-wear"),
+  c("dress-material", "Dress Material", "ladies-wear"),
 ];
-export const bySlug = Object.fromEntries(CATEGORIES.map((x) => [x.slug, x]));
+export const ADMIN_CATEGORIES = [...CATEGORIES, ...LEGACY_CATEGORIES];
+export const bySlug = Object.fromEntries(ADMIN_CATEGORIES.map((x) => [x.slug, x]));
 export const groupBySlug = Object.fromEntries(GROUPS.map((x) => [x.slug, x]));
 export const catName = (slug) => bySlug[slug]?.name || slug || "";
 export const slugsInGroup = (g) => CATEGORIES.filter((x) => x.group === g).map((x) => x.slug);

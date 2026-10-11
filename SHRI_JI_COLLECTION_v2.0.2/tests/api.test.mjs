@@ -15,7 +15,7 @@ beforeEach(() => {
 });
 
 test("admin endpoints: anonymous=401, customer=403, admin=200", async () => {
-  for (const f of ["products", "orders"]) {
+  for (const f of ["products", "orders", "cancellations"]) {
     const h = await load(`../api/_routes/admin/${f}.js`);
     assert.equal((await call(h, { method: "GET" })).statusCode, 401);
     assert.equal((await call(h, { method: "GET", headers: cookieFor("tokUser") })).statusCode, 403);
@@ -24,6 +24,14 @@ test("admin endpoints: anonymous=401, customer=403, admin=200", async () => {
   const up = await load("../api/upload-image.js");
   assert.equal((await call(up, { method: "POST", headers: { ...same } })).statusCode, 401);
   assert.equal((await call(up, { method: "POST", headers: { ...same, ...cookieFor("tokUser") } })).statusCode, 403);
+});
+test("customer cancellation requests are authenticated, same-origin and order-owner scoped", async () => {
+  const h = await load("../api/_routes/orders/cancellations.js");
+  const body = { orderNumber: "SJC-260101-AB12C", reason: "Change of mind" };
+  assert.equal((await call(h, { method: "POST", body, headers: same })).statusCode, 401);
+  assert.equal((await call(h, { method: "POST", body, headers: { origin: "https://evil.example", ...cookieFor("tokUser") } })).statusCode, 403);
+  const noOrder = await call(h, { method: "POST", body, headers: { ...same, ...cookieFor("tokUser") } });
+  assert.equal(noOrder.statusCode, 404);
 });
 test("customer cannot create/edit/delete products", async () => {
   const h = await load("../api/_routes/admin/products.js");

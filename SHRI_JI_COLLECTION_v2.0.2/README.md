@@ -1,6 +1,6 @@
-# SHRI JI COLLECTION: online store
+# SHRI JI COLLECTION: online store — v3.1.0 upgrade
 
-Thakur Ji Poshak & Ladies Wear, Sarai Tareen (Sambhal). Vercel (static pages + serverless API) · Supabase (Auth, Postgres, Storage) · Razorpay (UPI / Google Pay / cards) + Cash on Delivery.
+Thakur Ji Poshak & Ladies Wear, Sarai Tareen (Sambhal). Vercel (static pages + serverless API) · Supabase (Auth, Postgres, Storage) · Razorpay (UPI / Google Pay / cards) + Cash on Delivery. The 3.1.0 upgrade adds catalogue/variant controls, item-level returns, cancellation requests, order-event timelines, tracking fields and a retryable admin email outbox.
 
 The owner manages everything from **/admin** on a phone. No code editing is needed.
 
@@ -12,7 +12,7 @@ api/               ONLY 9 serverless functions (Vercel Hobby plan allows max 12)
   page.js          server-rendered home / shop / category / product pages (SEO)
   auth.js          login, signup, logout, me, password reset      (/api/auth/*)
   orders.js        create order + my orders + pay + verify-payment (/api/orders, /api/orders/my, /api/pay, /api/verify-payment)
-  admin.js         admin products + orders                         (/api/admin/products, /api/admin/orders)
+  admin.js         admin products, orders, categories, returns, cancellation requests and settings
   upload-image.js  admin photo upload                              (/api/admin/upload-image)
   products.js, site.js (sitemap + robots), razorpay-webhook.js, cron/expire-orders.js
   _routes/, _*.js  the real handler code + helpers (underscore = not a function). vercel.json rewrites keep the old URLs
@@ -36,8 +36,9 @@ tests/             unit + API tests (npm test) and a browser E2E suite (npm run 
 | `RAZORPAY_WEBHOOK_SECRET` | the secret *you type* when creating the webhook (step 4) |
 | `CRON_SECRET` | any long random string (protects the nightly clean-up job) |
 | `SITE_URL` | your final address, e.g. `https://www.shrijicollection.in` (no trailing `/`) |
-| `SHIPPING_FLAT` *(optional)* | delivery charge in ₹ (default `0` = free) |
-| `FREE_SHIPPING_ABOVE` *(optional)* | order value above which delivery is free |
+| `RESEND_API_KEY` *(optional)* | Resend server-side API key for order emails |
+| `ADMIN_NOTIFICATION_EMAIL` *(optional)* | The shop owner’s notification inbox |
+| `EMAIL_FROM` *(optional)* | Sender on a domain verified with Resend |
 
 Never commit a real `.env`; `.gitignore` already excludes it. See `.env.example`.
 
@@ -64,7 +65,15 @@ Never commit a real `.env`; `.gitignore` already excludes it. See `.env.example`
 
 How payment safety works: the server computes the amount from database prices and creates the Razorpay order; after payment the server verifies Razorpay's signature (and the webhook confirms independently) before the order is marked **paid**. The browser saying "success" never marks anything paid. Webhook events are de-duplicated. `payment_status` (pending / paid / failed / cancelled) is separate from `order_status`.
 
-## 4. Deploy: GitHub → Vercel
+## 4. Catalog and delivery upgrade
+
+Before deploying the advanced catalogue, categories, variant inventory, order timeline, item-level returns, cancellation requests and tracking changes, back up Supabase and run `migrations/20261011_catalog_delivery_variants.sql` against a staging project first. This additive migration keeps product/order records, consolidates old `mala` and `necklace` category assignments into **Mala and Necklace** without deleting those products, marks old categories hidden, and adds return/email audit tables. Do not run the whole schema file on production solely for this upgrade.
+
+Delivery charges are computed from the discounted merchandise subtotal: below ₹499 = ₹50; ₹499 to ₹999.99 = ₹40; ₹1,000+ = free. The matching logic exists in both the UI helpers and the server-side `create_order` SQL RPC. The server result is authoritative.
+
+Admin email notifications for new orders, cancellation requests, and completed cancellations use a deduplicated outbox. Set `RESEND_API_KEY`, `ADMIN_NOTIFICATION_EMAIL`, and `EMAIL_FROM` only after verifying the sender domain in Resend. A status of `accepted` means Resend accepted the request, not that the email reached the inbox. The existing daily cleanup cron retries queued/failed outbox items.
+
+## 5. Deploy: GitHub → Vercel
 1. **GitHub:** create a *private* repository. Upload this folder's contents (GitHub web → *Add file → Upload files*), or:
    ```bash
    git init && git add . && git commit -m "SHRI JI COLLECTION v2"
@@ -75,7 +84,7 @@ How payment safety works: the server computes the amount from database prices an
 4. **Custom domain:** Vercel → project → *Settings → Domains → Add* → follow the DNS instructions at your domain provider (an `A` record to `76.76.21.21` for the root domain and a `CNAME` to `cname.vercel-dns.com` for `www`; Vercel shows the exact values). Then set `SITE_URL` to the final address, redeploy, and update Supabase *Site URL / Redirect URLs* and the Razorpay webhook URL.
 5. Region is set to Mumbai (`bom1`) in `vercel.json`, close to Supabase's Mumbai region.
 
-## 5. Test the live site (checklist)
+## 6. Test the live site (checklist)
 1. Open the site: home page lists categories; `/robots.txt` and `/sitemap.xml` open.
 2. Sign up / log in / log out with a normal customer email.
 3. `/admin` as customer → "Access denied". As owner → Products tab opens.
@@ -85,7 +94,7 @@ How payment safety works: the server computes the amount from database prices an
 7. In Admin → change an order to Packed → Shipped → Delivered; customer sees the status. Cancelling returns stock.
 8. Run Google PageSpeed on a product page.
 
-## 6. Google Search Console (after deployment)
+## 7. Google Search Console (after deployment)
 1. search.google.com/search-console → **Add property → URL prefix** (or Domain) → your `SITE_URL`.
 2. Verify: for Domain, add the DNS TXT record Google shows; for URL prefix, choose the HTML-tag method and ask to add the tag to the pages (or use DNS).
 3. **Sitemaps →** submit `sitemap.xml`.
@@ -94,13 +103,13 @@ How payment safety works: the server computes the amount from database prices an
 6. Product structured data can be checked with Google's Rich Results Test. No ratings or reviews are published, and none are invented.
 Ranking for "SHRI JI COLLECTION", "Thakur Ji Poshak" etc. takes weeks. Add real products with good names and photos regularly.
 
-## 7. Everyday use (owner)
+## 8. Everyday use (owner)
 * **/admin → Products → + Add product:** pick category, price (and optional sale price), stock, sizes (tap the quick buttons), material, description, then choose photos. Photos are shrunk on the phone, previewed, and uploaded when you tap **Save**. First photo is the cover; "Make cover" changes it.
 * **Visible switch** hides a product without deleting it. Stock 0 shows "Sold out".
-* **Orders:** search by order no./name/phone, filter by status/payment, open an order to see address, items and payment; tap a status to update. COD orders become *paid* when marked Delivered.
+* **Orders:** search by order no./name/phone, filter by status/payment/date/total, open an order to see address, items and payment; update status and actual tracking ID/link. COD orders become *paid* when marked Delivered. A separate **Cancellation Requests** tab handles requests; paid online orders cannot be cancelled until the refund is processed through the gateway.
 * Unpaid online orders are cancelled automatically after 24 h and their stock is released (nightly job).
 
-## 8. Local development
+## 9. Local development
 ```bash
 npm install
 npm test            # unit + API tests, no network or database needed
@@ -133,3 +142,10 @@ See `AI_ASSISTANT_SETUP.md`. In short: it works right away in "store answers" mo
 
 ### Safe release routine
 Follow `DEPLOYMENT_CHECKLIST.md` (branch → Preview → test → merge). The honest audit of what is done and not done is in `CURRENT_AUDIT.md`.
+
+
+## 10. Upgrade scope and verification limits
+
+This delivery is a code-level upgrade, not a claim that the live store is already production-verified. Apply the migration to staging first and verify table/constraint names against the target project's schema before production. There is no `build` script in `package.json`; `npm test` and JavaScript syntax checks are the automated local checks. The browser E2E suite requires a Playwright Chromium binary, which was not available in the packaging environment.
+
+Captured online-payment refunds are not initiated by the return/cancellation dashboard. The admin flow intentionally refuses to finalize cancellation of a paid online order until the gateway refund has been processed and reconciled. Optional customer email notifications, automated gateway refunds, courier API integration, and full external sandbox/live payment exercises require separate provider credentials/configuration and remain unverified.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.1.0: catalogue, variant inventory, returns and cancellation workflows
+* Prioritized Thakur Ji Poshak; customer taxonomy now hides legacy Ladies Wear categories without deleting existing product records. Added an admin category registry with safe deletion/deactivation.
+* Added admin product metadata for variants, per-variant price/stock/SKU, MOQ versus pack quantity, specifications, sanitized rich-text description, return policy, product archive, configurable filters/sorting and image reordering controls.
+* Enforced server-side shipping tiers (< ₹499: ₹50; ₹499–₹999.99: ₹40; ₹1,000+: free), authoritative product/variant prices, package-piece inventory movement and idempotent stock restoration in the database migration.
+* Added actual order-event timelines, delivery tracking fields, item-level return requests/evidence storage and a separate customer cancellation-request queue with admin decisions and deduplicated notification emails. Captured online payments cannot be marked cancelled until the gateway refund is processed externally and the admin records its reference; the site does not initiate gateway refunds.
+* Added an idempotent transactional-email outbox using Resend for new orders, cancellation requests and completed cancellations.
+* Tests: 56 Node unit/API tests passed; all 54 JavaScript/MJS syntax checks passed. Browser E2E did not run because Playwright Chromium was missing. The browser E2E suite could not launch because Playwright Chromium was missing. No database migration, Vercel deployment, real sandbox payment or production payment was performed.
+* Migration: `migrations/20261011_catalog_delivery_variants.sql` (additive; back up and validate schema on staging first).
+
 ## 3.0.0: SHRI JI Assistant + review hardening
 * **New: SHRI JI Assistant** (chat). Server-side only, read-only, English/Hindi/Hinglish, real products only, works without an AI key ("store answers" mode), optional live AI through `ANTHROPIC_API_KEY`. Owner can switch it off and write FAQ answers in admin → Site. No new serverless function, no new table. See `AI_ASSISTANT_SETUP.md`.
 * **Reviews:** added spam controls (burst limit, 3 per hour and 1 per product per day per visitor; one-way visitor hash), "not purchase-verified" label, and the additive migration `migrations/20261011_review_abuse_controls.sql`.

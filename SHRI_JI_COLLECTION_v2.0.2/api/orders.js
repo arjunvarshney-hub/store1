@@ -3,7 +3,10 @@ import create from "./_routes/orders/create.js";
 import my from "./_routes/orders/my.js";
 import pay from "./_routes/orders/pay.js";
 import verify from "./_routes/orders/verify.js";
-const actions = { my, pay, verify };
+import returns from "./_routes/orders/returns.js";
+import returnPhoto from "./_routes/orders/return-photo.js";
+import cancellations from "./_routes/orders/cancellations.js";
+const actions = { my, pay, verify, returns, cancellations, "return-photo": returnPhoto };
 export default (req, res) => {
   const a = req.query?.action;
   if (!a) return create(req, res);

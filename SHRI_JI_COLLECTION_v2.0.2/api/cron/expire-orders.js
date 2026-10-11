@@ -1,10 +1,12 @@
 // Daily Vercel Cron: cancels unpaid online orders older than 24h and releases their reserved stock.
 import { route, admin, HttpError } from "../_lib.js";
+import { processNotificationOutbox } from "../_notifications.js";
 export default route(["GET"], async (req, res) => {
   const secret = process.env.CRON_SECRET;
   if (!secret) throw new HttpError(503, "CRON_SECRET is not set");
   if (req.headers.authorization !== `Bearer ${secret}`) throw new HttpError(401, "Unauthorized");
   const { data, error } = await (await admin()).rpc("expire_unpaid_orders", { p_hours: 24 });
   if (error) throw error;
-  res.json({ ok: true, cancelled: data });
+  const notifications = await processNotificationOutbox(await admin(), { limit: 10 }).catch((e) => { console.error("[notification-outbox] cron failed", String(e?.message || "error").slice(0,120)); return { processed: 0, error: true }; });
+  res.json({ ok: true, cancelled: data, notificationsProcessed: notifications.processed || 0, notificationsSkipped: notifications.skipped || undefined, notificationError: notifications.error || undefined });
 });

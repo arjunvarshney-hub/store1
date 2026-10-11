@@ -2,7 +2,7 @@
 import { siteUrl } from "./_lib.js";
 import { queryProducts, getSettings, getProductReviewData } from "./_catalog.js";
 import { homePage, listingPage, productPage, notFoundPage } from "./_layout.js";
-import { bySlug, groupBySlug } from "../public/js/categories.js";
+import { bySlug, groupBySlug, CATEGORIES } from "../public/js/categories.js";
 
 const one = (v) => (Array.isArray(v) ? v[0] : v);
 
@@ -26,15 +26,17 @@ export default async function handler(req, res) {
       return send(200, productPage(site, p, rel, settings, reviewData));
     }
     if (type === "category" || type === "shop") {
-      const category = type === "category" && bySlug[slug] ? slug : undefined;
+      const category = type === "category" && (settings.categories || CATEGORIES).some((c) => c.slug === slug) ? slug : undefined;
       const group = type === "category" && groupBySlug[slug] ? slug : undefined;
       if (type === "category" && !category && !group) return send(404, notFoundPage(site, "Category", settings));
       const qs = String(one(q.q) || "").slice(0, 60), sort = ["price_asc", "price_desc"].includes(one(q.sort)) ? one(q.sort) : "new";
       const r = await queryProducts({ category, group, q: qs, sort, page: one(q.page), pageSize: 24 });
       return send(200, listingPage(site, { ...r, category, group, q: qs, sort, settings }));
     }
-    const { products } = await queryProducts({ limit: 12 });
-    return send(200, homePage(site, { products, settings }));
+    const [primary, fresh] = await Promise.all([queryProducts({ group: "thakur-ji-poshak", limit: 8 }), queryProducts({ limit: 12 })]);
+    const seen = new Set(primary.products.map((p) => p.id));
+    const products = [...primary.products, ...fresh.products.filter((p) => !seen.has(p.id))].slice(0, 16);
+    return send(200, homePage(site, { products, thakurProducts: primary.products, settings }));
   } catch (e) {
     console.error("[page]", e?.message || e);
     res.status(500).setHeader("Content-Type", "text/html; charset=utf-8").setHeader("Cache-Control", "no-store");

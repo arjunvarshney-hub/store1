@@ -1,29 +1,86 @@
-import { api, cart, $, $$, msg, toast } from "./common.js";
+import { api, cart, esc, $, $$, msg, toast, money } from "./common.js";
+import { priceFor } from "./render.js";
 
 const pdp = $("#pdp");
 if (pdp) {
-  const id = Number(pdp.dataset.id), stock = Number(pdp.dataset.stock);
-  const max = Math.max(1, Math.min(10, stock));
-  let qty = 1;
-  const out = $("#qVal"), msg = $("#pdpMsg");
-  const show = () => { out.textContent = qty; };
-  // gallery
-  $$(".th", pdp).forEach((b) => b.addEventListener("click", () => {
-    const main = $("#galMain img"); if (main) { main.src = b.dataset.src; main.removeAttribute("loading"); }
-    $$(".th", pdp).forEach((x) => x.classList.toggle("on", x === b));
-  }));
-  $("#qMinus")?.addEventListener("click", () => { qty = Math.max(1, qty - 1); show(); });
-  $("#qPlus")?.addEventListener("click", () => { if (qty < max) qty++; else toast(`Only ${max} available`); show(); });
-  $("#addBtn")?.addEventListener("click", () => {
-    const hasSizes = $$('input[name="size"]', pdp).length > 0;
-    const size = $('input[name="size"]:checked', pdp)?.value || "";
-    if (hasSizes && !size) { msg.textContent = "Please select a size."; msg.className = "sm warn"; $(".sizes")?.scrollIntoView({ block: "center", behavior: "smooth" }); return; }
-    cart.add(id, size, qty);
-    msg.textContent = "Added to your cart."; msg.className = "sm";
+  const id = Number(pdp.dataset.id), baseStock = Number(pdp.dataset.stock) || 0;
+  const variants = $$('input[name="variant"]', pdp);
+  const hasVariants = variants.length > 0;
+  let currentVariant = null;
+  let pack = Math.max(1, Number(pdp.dataset.pack) || 1);
+  let minimum = Math.max(1, Number(pdp.dataset.min) || 1);
+  let availablePackages = Math.floor(baseStock / pack);
+  let qty = minimum;
+  const out = $("#qVal"), status = $("#pdpMsg"), add = $("#addBtn");
+  const main = $("#galMain");
+  const photos = $$(".th", pdp);
+  let photoIndex = 0;
+  const showPhoto = (idx) => {
+    if (!photos.length || !main) return;
+    photoIndex = (idx + photos.length) % photos.length;
+    const b = photos[photoIndex], im = $("img", main);
+    if (im) { im.src = b.dataset.src; im.alt = `${pdp.dataset.name} photo ${photoIndex + 1}`; im.classList.remove("zoomed"); }
+    photos.forEach((x, i) => x.classList.toggle("on", i === photoIndex));
+    const count = $("#galCount"); if (count) count.textContent = `${photoIndex + 1}/${photos.length}`;
+    const zoom = $("#galZoom"); if (zoom) zoom.textContent = "⌕";
+  };
+  photos.forEach((b, i) => { b.addEventListener("click", () => showPhoto(i)); });
+  let startX = null;
+  main?.addEventListener("touchstart", (e) => { startX = e.changedTouches?.[0]?.clientX ?? null; }, { passive: true });
+  main?.addEventListener("touchend", (e) => {
+    if (startX == null) return;
+    const dx = (e.changedTouches?.[0]?.clientX ?? startX) - startX;
+    if (Math.abs(dx) > 40) showPhoto(photoIndex + (dx < 0 ? 1 : -1));
+    startX = null;
+  }, { passive: true });
+  // Pointer fallback supports trackpads / mouse drag without requiring small arrows.
+  main?.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse") startX = e.clientX; });
+  main?.addEventListener("pointerup", (e) => { if (startX == null || e.pointerType !== "mouse") return; const dx = e.clientX - startX; if (Math.abs(dx) > 40) showPhoto(photoIndex + (dx < 0 ? 1 : -1)); startX = null; });
+  $("#galZoom")?.addEventListener("click", () => {
+    const im = $("img", main); if (!im) return;
+    im.classList.toggle("zoomed"); $("#galZoom").textContent = im.classList.contains("zoomed") ? "−" : "⌕";
+  });
+  main?.querySelector("img")?.addEventListener("click", () => { const im = $("img", main); if (im) { im.classList.toggle("zoomed"); $("#galZoom").textContent = im.classList.contains("zoomed") ? "−" : "⌕"; } });
+
+  const showQty = () => { if (out) out.textContent = qty; };
+  const setPrice = (regular, sale) => {
+    const reg = Number(regular) || 0, sp = sale === "" || sale == null ? NaN : Number(sale), eff = sp > 0 && sp < reg ? sp : reg;
+    const value = $("#priceValue"), regularEl = $("#regularPrice"), off = $("#discountValue");
+    if (value) value.textContent = money(eff);
+    if (regularEl) { regularEl.textContent = money(reg); regularEl.hidden = !(sp > 0 && sp < reg); }
+    if (off) { off.textContent = reg > 0 && eff < reg ? `${Math.round((1 - eff / reg) * 100)}% off` : ""; off.hidden = !(reg > 0 && eff < reg); }
+  };
+  const updateVariant = () => {
+    currentVariant = variants.find((x) => x.checked) || null;
+    if (!currentVariant) { add.disabled = true; if (status) { status.textContent = "Please choose an option."; status.className = "sm muted"; } return; }
+    pack = Math.max(1, Number(currentVariant.dataset.pack) || 1);
+    minimum = Math.max(1, Number(currentVariant.dataset.min) || 1);
+    availablePackages = Math.floor((Number(currentVariant.dataset.stock) || 0) / pack);
+    qty = availablePackages >= minimum ? minimum : Math.max(1, availablePackages);
+    showQty(); setPrice(currentVariant.dataset.price, currentVariant.dataset.sale);
+    const detail = $("#variantDetail");
+    if (detail) detail.textContent = availablePackages < minimum ? "This option is currently unavailable." : `Pack contains ${pack} piece(s). Minimum order: ${minimum} package(s). Available: ${availablePackages} package(s).`;
+    if (add) add.disabled = availablePackages < minimum;
+    if (status) { status.textContent = ""; status.className = "sm"; }
+    const unit = $("#qtyUnit"); if (unit) unit.textContent = `(packages · ${pack} piece${pack === 1 ? "" : "s"} each)`;
+  };
+  variants.forEach((v) => v.addEventListener("change", updateVariant));
+  if (!hasVariants) showQty();
+
+  $("#qMinus")?.addEventListener("click", () => { qty = Math.max(minimum, qty - 1); showQty(); });
+  $("#qPlus")?.addEventListener("click", () => { if (qty < Math.min(100, availablePackages)) { qty++; showQty(); } else toast(`Only ${availablePackages} package(s) available`); });
+  add?.addEventListener("click", () => {
+    if (hasVariants && !currentVariant) { if (status) { status.textContent = "Please select a colour, design or pack option."; status.className = "sm warn"; } $(".variants", pdp)?.scrollIntoView({ block: "center", behavior: "smooth" }); return; }
+    const hasSizes = !hasVariants && $$('input[name="size"]', pdp).length > 0;
+    const size = !hasVariants ? $('input[name="size"]:checked', pdp)?.value || "" : "";
+    if (hasSizes && !size) { status.textContent = "Please select a size."; status.className = "sm warn"; $(".sizes", pdp)?.scrollIntoView({ block: "center", behavior: "smooth" }); return; }
+    if (qty < minimum) { if (status) status.textContent = `Minimum order quantity is ${minimum}.`; return; }
+    if (qty > availablePackages) { if (status) status.textContent = "Quantity exceeds available stock."; return; }
+    cart.add(id, size, qty, currentVariant?.value || "");
+    if (status) { status.textContent = "Added to your cart."; status.className = "sm ok"; }
     $("#goCart").hidden = false; toast("Added to cart");
   });
 }
-
 
 // Product reviews are guest-friendly, server-validated, and held for moderation before publication.
 const reviewForm = $("#reviewForm");

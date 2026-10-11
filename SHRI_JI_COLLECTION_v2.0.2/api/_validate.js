@@ -1,6 +1,7 @@
 // Input validation. Pure functions: easy to unit-test, never trust the browser.
+import crypto from "node:crypto";
 import { HttpError } from "./_lib.js";
-import { bySlug } from "../public/js/categories.js";
+import { bySlug, GROUPS } from "../public/js/categories.js";
 
 const CTRL = /[\u0000-\u001f\u007f]/g;
 export function text(v, field, { min = 0, max = 200, required = false } = {}) {
@@ -44,8 +45,10 @@ export function orderItems(items) {
   return items.map((it) => {
     const productId = Number(it?.productId), qty = Number(it?.qty);
     if (!Number.isSafeInteger(productId) || productId < 1) throw new HttpError(400, "Invalid product in cart.");
-    if (!Number.isInteger(qty) || qty < 1 || qty > 10) throw new HttpError(400, "Quantity must be between 1 and 10.");
-    return { productId, qty, size: text(it?.size, "Size", { max: 20 }) };
+    if (!Number.isInteger(qty) || qty < 1 || qty > 100) throw new HttpError(400, "Quantity must be between 1 and 100.");
+    const variantId = text(it?.variantId, "Variant", { max: 80 });
+    if (variantId && !/^[A-Za-z0-9_-]{6,80}$/.test(variantId)) throw new HttpError(400, "Invalid product variant.");
+    return { productId, qty, size: text(it?.size, "Size", { max: 40 }), ...(variantId ? { variantId } : {}) };
   });
 }
 export function idempotencyKey(v) {
@@ -67,11 +70,90 @@ export function sizes(v) {
   if (out.length > 15) throw new HttpError(400, "Too many sizes (max 15).");
   return out;
 }
+/** Small server-side rich text allow-list. It deliberately discards styles, event handlers and unknown tags. */
+export function sanitizeRichText(input) {
+  let html = typeof input === "string" ? input.slice(0, 20000) : "";
+  html = html.replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<(script|style|iframe|object|embed|svg|math|form|input|button|textarea|select|video|audio)[^>]*>[\s\S]*?<\/\1\s*>/gi, "")
+    .replace(/<(script|style|iframe|object|embed|svg|math|form|input|button|textarea|select|video|audio)\b[^>]*\/?\s*>/gi, "");
+  const allowed = new Set(["p", "br", "strong", "b", "em", "i", "u", "ul", "ol", "li", "h2", "h3", "h4", "blockquote", "a"]);
+  html = html.replace(/<\/?([a-z0-9-]+)\b([^>]*)>/gi, (whole, tag, attrs) => {
+    tag = tag.toLowerCase();
+    if (!allowed.has(tag)) return "";
+    if (tag === "br") return "<br>";
+    const closing = /^<\s*\//.test(whole);
+    if (closing) return `</${tag}>`;
+    if (tag !== "a") return `<${tag}>`;
+    const m = String(attrs || "").match(/\bhref\s*=\s*(["'])(.*?)\1/i) || String(attrs || "").match(/\bhref\s*=\s*([^\s>]+)/i);
+    if (!m) return "<a>";
+    const href = String(m[2] || m[1] || "").trim().replace(/["'<>]/g, "");
+    if (!/^(https?:\/\/|mailto:)/i.test(href)) return "<a>";
+    return `<a href="${href.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}" target="_blank" rel="noopener noreferrer nofollow">`;
+  });
+  return html.replace(/javascript\s*:/gi, "").trim();
+}
+
+function rows(input, field, maxRows = 30) {
+  let arr = input;
+  if (typeof arr === "string") { try { arr = JSON.parse(arr); } catch { throw new HttpError(400, `${field} format is invalid.`); } }
+  if (arr == null || arr === "") return [];
+  if (!Array.isArray(arr) || arr.length > maxRows) throw new HttpError(400, `${field} must contain up to ${maxRows} rows.`);
+  return arr.map((r, i) => ({
+    label: text(r?.label, `${field} label`, { min: 1, max: 80, required: true }),
+    value: text(r?.value, `${field} value`, { max: 300 }),
+    sort_order: Number.isInteger(Number(r?.sort_order)) && Number(r?.sort_order) >= 0 ? Number(r.sort_order) : i,
+  })).filter((r) => r.value);
+}
+
+function variants(input) {
+  let arr = input;
+  if (typeof arr === "string") { try { arr = JSON.parse(arr); } catch { throw new HttpError(400, "Variants format is invalid."); } }
+  if (arr == null || arr === "") return [];
+  if (!Array.isArray(arr) || arr.length > 50) throw new HttpError(400, "Use no more than 50 variants per product.");
+  const ids = new Set(), skus = new Set();
+  return arr.map((v, i) => {
+    const id = text(v?.id, "Variant ID", { max: 80 }) || `v_${crypto.randomUUID().replaceAll("-", "")}`;
+    if (!/^[A-Za-z0-9_-]{6,80}$/.test(id) || ids.has(id)) throw new HttpError(400, "Variant IDs must be unique and valid.");
+    ids.add(id);
+    const sku = text(v?.sku, "Variant SKU", { max: 80 });
+    if (sku && skus.has(sku.toLowerCase())) throw new HttpError(400, "Variant SKUs must be unique within a product.");
+    if (sku) skus.add(sku.toLowerCase());
+    const price = Number(v?.price);
+    if (!(price > 0 && price <= 1000000)) throw new HttpError(400, `Variant ${i + 1}: price must be greater than 0.`);
+    let sale_price = null;
+    if (v?.sale_price !== null && v?.sale_price !== undefined && v?.sale_price !== "") {
+      sale_price = Number(v.sale_price);
+      if (!(sale_price > 0 && sale_price < price)) throw new HttpError(400, `Variant ${i + 1}: sale price must be below its regular price.`);
+    }
+    const stock = Number(v?.stock ?? 0), pack_quantity = Number(v?.pack_quantity ?? 1), min_order_qty = Number(v?.min_order_qty ?? 1);
+    if (!Number.isInteger(stock) || stock < 0 || stock > 1000000) throw new HttpError(400, `Variant ${i + 1}: stock must be a whole number.`);
+    if (!Number.isInteger(pack_quantity) || pack_quantity < 1 || pack_quantity > 10000) throw new HttpError(400, `Variant ${i + 1}: pack quantity must be 1–10,000.`);
+    if (!Number.isInteger(min_order_qty) || min_order_qty < 1 || min_order_qty > 1000) throw new HttpError(400, `Variant ${i + 1}: minimum order quantity must be 1–1,000.`);
+    const attributes = {};
+    for (const key of ["Colour", "Size", "Material", "Design", "Pack Size"]) {
+      const value = text(v?.attributes?.[key], `${key}`, { max: 80 });
+      if (value) attributes[key] = value;
+    }
+    const label = text(v?.label, "Variant name", { min: 2, max: 120, required: true });
+    return { id, label, sku, attributes, price: Math.round(price * 100) / 100,
+      sale_price: sale_price === null ? null : Math.round(sale_price * 100) / 100, stock,
+      pack_quantity, min_order_qty, active: v?.active === false || v?.active === "false" ? false : true };
+  });
+}
+
 /** Validates a full product payload and returns ONLY whitelisted columns. */
 export function product(b, prefix = imagePrefix()) {
   b = b && typeof b === "object" ? b : {};
-  const category = String(b.category ?? "");
-  if (!bySlug[category]) throw new HttpError(400, "Please choose a valid category.");
+  let category = text(b.category, "Category", { max: 80, required: true });
+  let custom_category_name = text(b.custom_category_name, "Custom category", { max: 80 });
+  if (category === "__other__") {
+    if (custom_category_name.length < 2) throw new HttpError(400, "Enter the custom category name.");
+    category = "custom-" + custom_category_name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 55);
+  }
+  const custom_category_group = text(b.custom_category_group, "Custom category group", { max: 40 });
+  if (!bySlug[category] && !/^custom-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(category)) throw new HttpError(400, "Please choose a valid category.");
+  if (custom_category_name && !category.startsWith("custom-")) custom_category_name = "";
+  if (custom_category_group && !["thakur-ji-poshak", "ladies-wear"].includes(custom_category_group)) throw new HttpError(400, "Please choose a valid category group.");
   const price = Number(b.price);
   if (!(price > 0 && price <= 1000000)) throw new HttpError(400, "Price must be greater than 0.");
   let sale_price = null;
@@ -79,21 +161,53 @@ export function product(b, prefix = imagePrefix()) {
     sale_price = Number(b.sale_price);
     if (!(sale_price > 0 && sale_price < price)) throw new HttpError(400, "Sale price must be less than the regular price.");
   }
-  const stock = Number(b.stock ?? 0);
-  if (!Number.isInteger(stock) || stock < 0 || stock > 100000) throw new HttpError(400, "Stock must be a whole number (0 or more).");
+  let stock = Number(b.stock ?? 0);
+  if (!Number.isInteger(stock) || stock < 0 || stock > 1000000) throw new HttpError(400, "Stock must be a whole number (0 or more).");
+  const cost_price = b.cost_price === null || b.cost_price === undefined || b.cost_price === "" ? null : Number(b.cost_price);
+  if (cost_price !== null && (!(cost_price >= 0) || cost_price > 1000000)) throw new HttpError(400, "Cost price must be 0 or more.");
+  const low_stock_threshold = Number(b.low_stock_threshold ?? 5), min_order_qty = Number(b.min_order_qty ?? 1), pack_size = Number(b.pack_size ?? 1);
+  if (!Number.isInteger(low_stock_threshold) || low_stock_threshold < 0 || low_stock_threshold > 100000) throw new HttpError(400, "Low-stock threshold must be a whole number.");
+  if (!Number.isInteger(min_order_qty) || min_order_qty < 1 || min_order_qty > 1000) throw new HttpError(400, "Minimum order quantity must be between 1 and 1,000.");
+  if (!Number.isInteger(pack_size) || pack_size < 1 || pack_size > 10000) throw new HttpError(400, "Pack size must be between 1 and 10,000 pieces.");
+  const weight_grams = b.weight_grams === null || b.weight_grams === undefined || b.weight_grams === "" ? null : Number(b.weight_grams);
+  if (weight_grams !== null && (!(weight_grams >= 0) || weight_grams > 10000000)) throw new HttpError(400, "Weight must be 0 or more grams.");
+  const dimensions = {};
+  for (const k of ["length_cm", "width_cm", "height_cm"]) {
+    const raw = b.dimensions?.[k];
+    if (raw !== undefined && raw !== null && raw !== "") {
+      const n = Number(raw); if (!(n > 0 && n <= 100000)) throw new HttpError(400, `Invalid ${k.replace("_cm", "")} dimension.`); dimensions[k] = n;
+    }
+  }
   const imgs = Array.isArray(b.image_urls) ? b.image_urls : [];
   if (imgs.length > 8) throw new HttpError(400, "Maximum 8 photos per product.");
   for (const u of imgs) if (typeof u !== "string" || !u.startsWith(prefix) || u.length > 400) throw new HttpError(400, "Invalid image. Please upload photos using the uploader.");
+  const return_eligible = b.return_eligible === true || b.return_eligible === "true";
+  const return_window_days = Number(b.return_window_days ?? 0);
+  if (!Number.isInteger(return_window_days) || return_window_days < 0 || return_window_days > 90) throw new HttpError(400, "Return window must be 0–90 days.");
+  const descHtml = sanitizeRichText(b.description_html || "");
+  const description = text(b.description, "Description", { max: 5000 }) || (descHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || null);
+  const sku = text(b.sku, "Product SKU", { max: 80 });
+  const brand = text(b.brand, "Brand", { max: 100 });
+  const subcategory = text(b.subcategory, "Subcategory", { max: 100 });
+  const specs = rows(b.specifications, "Specifications", 40);
+  const vars = variants(b.variants);
+  if (vars.length) stock = vars.reduce((sum, item) => sum + item.stock, 0); // canonical product stock = sum of individual pieces across variants
   return {
     name: text(b.name, "Product name", { min: 2, max: 120, required: true }),
-    category,
-    price: Math.round(price * 100) / 100,
-    sale_price: sale_price === null ? null : Math.round(sale_price * 100) / 100,
-    description: text(b.description, "Description", { max: 3000 }) || null,
-    material: text(b.material, "Material", { max: 100 }) || null,
-    sizes: sizes(b.sizes),
-    image_urls: imgs,
-    stock,
+    category, custom_category_name: custom_category_name || null, custom_category_group: custom_category_group || null,
+    sku: sku || null, brand: brand || null, subcategory: subcategory || null,
+    price: Math.round(price * 100) / 100, sale_price: sale_price === null ? null : Math.round(sale_price * 100) / 100,
+    cost_price: cost_price === null ? null : Math.round(cost_price * 100) / 100,
+    description, description_html: descHtml || null, material: text(b.material, "Material", { max: 100 }) || null,
+    sizes: sizes(b.sizes), image_urls: imgs, stock, low_stock_threshold, min_order_qty, pack_size,
+    weight_grams: weight_grams === null ? null : Math.round(weight_grams * 100) / 100,
+    dimensions, variants: vars, specifications: specs,
+    return_eligible, return_window_days,
+    return_conditions: text(b.return_conditions, "Return conditions", { max: 1500 }) || null,
+    return_instructions: text(b.return_instructions, "Return instructions", { max: 1500 }) || null,
+    refund_policy: text(b.refund_policy, "Refund policy", { max: 1500 }) || null,
+    featured: b.featured === true || b.featured === "true",
+    archived_at: b.archived_at ? String(b.archived_at) : null,
     active: b.active === undefined ? true : b.active === true || b.active === "true",
   };
 }
