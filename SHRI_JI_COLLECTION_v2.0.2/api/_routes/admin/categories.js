@@ -5,7 +5,7 @@ import { setCategories, groupBySlug, nameKey } from "../../../public/js/categori
 import { resetCategoryCache } from "../../_catalog.js";
 
 export async function loadAllCategories(db) {
-  const { data, error } = await db.from("product_categories").select("slug,name,group_slug,sort_order,active");
+  const { data, error } = await db.from("categories").select("slug,name,group_slug,sort_order,active");
   if (error) throw error;
   if (Array.isArray(data) && data.length) setCategories(data);
   return data || [];
@@ -56,7 +56,7 @@ export default route(["GET", "POST", "PATCH", "DELETE"], async (req, res) => {
     const dup = rows.find((r) => r.slug === c.slug || nameKey(r.name) === nameKey(c.name));
     if (dup) throw new HttpError(409, dup.active ? `The category "${dup.name}" already exists.` : `A category called "${dup.name}" exists but is switched off. Switch it on in Categories instead of creating it again.`, { existing: dup.slug });
     const sort = Math.max(0, ...rows.filter((r) => r.active).map((r) => Number(r.sort_order) || 0)) + 10;
-    const { data, error } = await db.from("product_categories").insert({ slug: c.slug, name: c.name, group_slug: c.group, sort_order: sort, active: true, is_legacy: false }).select().single();
+    const { data, error } = await db.from("categories").insert({ slug: c.slug, name: c.name, group_slug: c.group, sort_order: sort, active: true }).select().single();
     if (error) throw error;
     await audit(user, "category.create", "category", c.slug, { name: c.name });
     fresh(); await loadAllCategories(db);
@@ -78,7 +78,7 @@ export default route(["GET", "POST", "PATCH", "DELETE"], async (req, res) => {
     if (b.sort_order !== undefined) { const n = Number(b.sort_order); if (!Number.isInteger(n) || n < 0 || n > 100000) throw new HttpError(400, "Invalid order."); patch.sort_order = n; }
     if (b.active !== undefined) patch.active = b.active === true || b.active === "true";
     if (!Object.keys(patch).length) throw new HttpError(400, "Nothing to update.");
-    const { data, error } = await db.from("product_categories").update(patch).eq("slug", slug).select().single();
+    const { data, error } = await db.from("categories").update(patch).eq("slug", slug).select().single();
     if (error) throw error;
     await audit(user, "category.update", "category", slug, patch);
     fresh(); await loadAllCategories(db);
@@ -87,7 +87,7 @@ export default route(["GET", "POST", "PATCH", "DELETE"], async (req, res) => {
 
   const n = (await countByCategory(db))[slug] || 0;       // DELETE
   if (n > 0) throw new HttpError(409, `${n} product${n === 1 ? " is" : "s are"} in this category. Move or archive them first, or switch the category off instead of deleting it.`);
-  const { error } = await db.from("product_categories").delete().eq("slug", slug);
+  const { error } = await db.from("categories").delete().eq("slug", slug);
   if (error) throw error;
   await audit(user, "category.delete", "category", slug);
   fresh();

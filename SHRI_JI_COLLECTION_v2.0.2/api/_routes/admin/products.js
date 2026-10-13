@@ -93,7 +93,7 @@ async function resolveCategory(db, b, rows, user) {
     return { ...b, category: dup.slug };
   }
   const sort = Math.max(0, ...rows.filter((r) => r.active).map((r) => Number(r.sort_order) || 0)) + 10;
-  const { error } = await db.from("product_categories").insert({ slug: c.slug, name: c.name, group_slug: c.group, sort_order: sort, active: true, is_legacy: false });
+  const { error } = await db.from("categories").insert({ slug: c.slug, name: c.name, group_slug: c.group, sort_order: sort, active: true });
   if (error) throw error;
   await audit(user, "category.create", "category", c.slug, { name: c.name, via: "product form" });
   resetCategoryCache(); await loadAllCategories(db);

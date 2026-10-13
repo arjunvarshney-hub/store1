@@ -16,7 +16,7 @@ export async function loadCategories({ force = false } = {}) {
   catLoadedAt = Date.now();
   try {
     const db = await anon();
-    const { data, error } = await db.from("product_categories").select("slug,name,group_slug,sort_order,active");
+    const { data, error } = await db.from("categories").select("slug,name,group_slug,sort_order,active");
     if (!error && Array.isArray(data) && data.some((r) => r?.slug && r?.group_slug)) {
       setCategories(data);
       if (!CATEGORIES.length) setCategories(DEFAULT_CATEGORIES);   // never leave the shop without a menu
