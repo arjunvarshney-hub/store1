@@ -61,3 +61,10 @@ NOT included yet (see docs/NEXT_PHASE_PROMPTS.md): admin + customer emails, retu
 * Shipping policy, returns policy and GST invoice are not built (business decisions needed).
 * No real product photos exist in the uploaded project; products show a neutral "Photo coming soon" tile until you upload photos in /admin.
 * Existing v1 products with free-text categories / external image URLs must be re-saved once in /admin (the form validates them).
+
+## 4.0.1 — Existing Supabase schema compatibility (2026-10-13)
+- Updated admin and storefront category queries to use the existing `public.product_categories` table instead of the absent `public.categories` table.
+- Category creation explicitly sets `is_legacy = false`.
+- Added `migrations/20261013_fix_existing_catalog.sql` to safely create the missing `product_variants` table and public read policy without dropping existing tables or changing existing product/order rows.
+- Updated unit tests to match the actual category table name.
+- Verification: `node --test tests/*.test.mjs` — 70 passed, 0 failed.

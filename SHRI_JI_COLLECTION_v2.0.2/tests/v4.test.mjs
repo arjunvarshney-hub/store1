@@ -102,7 +102,7 @@ test("variants: own price/sale/stock/pack, option combos unique, sale below pric
 const CATROWS = () => DEFAULT_CATEGORIES.map((c) => ({ slug: c.slug, name: c.name, group_slug: c.group, sort_order: c.sort, active: c.active }));
 test("catalogue hides products in switched-off categories and falls back to old columns if the DB is not upgraded", async () => {
   let seenOps = [];
-  fake.resolve = (t, ops) => { if (t === "categories") return { data: CATROWS(), error: null }; if (t === "products") { seenOps = ops; return { data: [], error: null, count: 0 }; } return { data: [], error: null }; };
+  fake.resolve = (t, ops) => { if (t === "product_categories") return { data: CATROWS(), error: null }; if (t === "products") { seenOps = ops; return { data: [], error: null, count: 0 }; } return { data: [], error: null }; };
   await queryProducts({ group: "ladies-wear" });
   const inCat = seenOps.filter((o) => o[0] === "in" && o[1][0] === "category").map((o) => o[1][1]);
   assert.ok(inCat.every((list) => !list.includes("maxi") && !list.includes("gown")), JSON.stringify(inCat));
@@ -116,14 +116,14 @@ test("admin categories: add, duplicate protection, rename, switch off, safe dele
   let rows = CATROWS(), count = {}, writes = [];
   fake.resolve = (t, ops, single) => {
     const w = ops.find((o) => ["insert", "update", "delete"].includes(o[0]));
-    if (t === "categories") { if (w) { writes.push([t, w[0], w[1][0]]); return { data: w[0] === "insert" ? w[1][0] : { ...w[1][0] }, error: null }; } return { data: rows, error: null }; }
+    if (t === "product_categories") { if (w) { writes.push([t, w[0], w[1][0]]); return { data: w[0] === "insert" ? w[1][0] : { ...w[1][0] }, error: null }; } return { data: rows, error: null }; }
     if (t === "products") { if (w) { writes.push([t, w[0], w[1][0]]); return { data: null, error: null }; } return { data: Object.entries(count).flatMap(([c, n]) => Array(n).fill({ category: c })), error: null }; }
     return { data: [], error: null };
   };
   assert.equal((await call(h, { method: "POST", headers: same, body: { name: "Pooja Thali", group: "thakur-ji-poshak" } })).statusCode, 401);
   assert.equal((await call(h, { method: "POST", headers: { ...same, ...cookieFor("tokUser") }, body: { name: "x y", group: "ladies-wear" } })).statusCode, 403);
   const ok = await call(h, { method: "POST", headers: ADMIN, body: { name: "Pooja Thali", group: "thakur-ji-poshak" } });
-  assert.equal(ok.statusCode, 201); assert.deepEqual(writes.at(-1).slice(0, 2), ["categories", "insert"]);
+  assert.equal(ok.statusCode, 201); assert.deepEqual(writes.at(-1).slice(0, 2), ["product_categories", "insert"]);
   for (const name of ["kurti", "KURTI ", "Mukut", "Mala and Necklace", "mala  &  necklace"]) assert.equal((await call(h, { method: "POST", headers: ADMIN, body: { name, group: "ladies-wear" } })).statusCode, 409, name);
   const sw = await call(h, { method: "POST", headers: ADMIN, body: { name: "Maxi", group: "ladies-wear" } });
   assert.equal(sw.statusCode, 409); assert.match(sw.body.error, /switched off/);
@@ -158,7 +158,7 @@ const VARS = [
   { id: 2, product_id: 4, sku: "NK-P-B1", label: "Blue / Single", options: { Colour: "Blue", "Pack Size": "Single Piece" }, price: 300, sale_price: 250, stock: 2, pack_qty: 1, available: true, sort_order: 1 },
 ];
 const lister = async (qs) => {
-  fake.resolve = (t) => (t === "products" ? { data: LIST, error: null } : t === "product_variants" ? { data: VARS, error: null } : t === "categories" ? { data: CATROWS(), error: null } : { data: [], error: null });
+  fake.resolve = (t) => (t === "products" ? { data: LIST, error: null } : t === "product_variants" ? { data: VARS, error: null } : t === "product_categories" ? { data: CATROWS(), error: null } : { data: [], error: null });
   const h = await load("../api/_routes/admin/products.js"); const r = await call(h, { headers: ADMIN, query: qs });
   assert.equal(r.statusCode, 200); return r.body;
 };
@@ -204,20 +204,20 @@ test("admin product: 'Others' creates a reusable category; duplicates are reused
   fake.resolve = (t, ops) => {
     const w = ops.find((o) => ["insert", "update", "delete"].includes(o[0]));
     if (w) writes.push([t, w[0], w[1][0]]);
-    if (t === "categories") { if (w) { const n = w[1][0]; rows.push({ ...n, active: true }); return { data: n, error: null }; } return { data: rows, error: null }; }
+    if (t === "product_categories") { if (w) { const n = w[1][0]; rows.push({ ...n, active: true }); return { data: n, error: null }; } return { data: rows, error: null }; }
     if (t === "products" && w?.[0] === "insert") return { data: { id: 77, ...w[1][0] }, error: null };
     return { data: [], error: null };
   };
   const body = { name: "Pooja Thali Set", price: 500, stock: 8, category: "__other", custom_category: "Pooja Thali", custom_group: "thakur-ji-poshak", min_order_qty: 2, variant_axes: ["Colour"], variants: [{ options: { Colour: "Gold" }, price: 500, stock: 8 }] };
   const r = await call(h, { method: "POST", headers: ADMIN, body });
   assert.equal(r.statusCode, 201);
-  assert.ok(writes.some((w) => w[0] === "categories" && w[1] === "insert" && w[2].slug === "pooja-thali"));
+  assert.ok(writes.some((w) => w[0] === "product_categories" && w[1] === "insert" && w[2].slug === "pooja-thali"));
   assert.ok(writes.some((w) => w[0] === "products" && w[2].category === "pooja-thali" && w[2].min_order_qty === 2));
   assert.ok(writes.some((w) => w[0] === "product_variants" && w[1] === "insert" && w[2].product_id === 77 && w[2].label === "Gold"));
   assert.ok(writes.some((w) => w[0] === "admin_audit"), "audit trail");
   writes = [];
   const again = await call(h, { method: "POST", headers: ADMIN, body: { ...body, variants: undefined, custom_category: "  KURTI " } });
-  assert.equal(again.statusCode, 201); assert.ok(!writes.some((w) => w[0] === "categories" && w[1] === "insert"), "existing category reused");
+  assert.equal(again.statusCode, 201); assert.ok(!writes.some((w) => w[0] === "product_categories" && w[1] === "insert"), "existing category reused");
   assert.ok(writes.some((w) => w[0] === "products" && w[2].category === "kurti"));
   assert.equal((await call(h, { method: "POST", headers: ADMIN, body: { ...body, custom_category: "Maxi", custom_group: "ladies-wear" } })).statusCode, 409);
   assert.equal((await call(h, { method: "POST", headers: ADMIN, body: { name: "x", price: 5, category: "__other", custom_category: "", custom_group: "ladies-wear" } })).statusCode, 400);
@@ -227,7 +227,7 @@ test("admin product: products with orders cannot be deleted (archive instead); o
   fake.resolve = (t, ops, single) => {
     if (t === "products") { if (ops.some((o) => o[0] === "delete")) { deleted = true; return { data: null, error: null }; } return single ? { data: P({ id: 9, image_urls: [] }), error: null } : { data: [], error: null }; }
     if (t === "orders") return { data: null, error: null, count: orders };
-    if (t === "categories") return { data: CATROWS(), error: null };
+    if (t === "product_categories") return { data: CATROWS(), error: null };
     return { data: [], error: null };
   };
   const blocked = await call(h, { method: "DELETE", headers: ADMIN, body: { id: 9 } });
@@ -240,7 +240,7 @@ test("admin product: archive / duplicate / mark out of stock", async () => {
   fake.resolve = (t, ops, single) => {
     const w = ops.find((o) => ["insert", "update", "delete"].includes(o[0])); if (w) writes.push([t, w[0], w[1][0]]);
     if (t === "products") return w?.[0] === "insert" ? { data: { id: 50, ...w[1][0] }, error: null } : single ? { data: P({ id: 9, name: "Red Kurti", sku: "RK-1", active: true }), error: null } : { data: w ? { id: 9 } : [], error: null };
-    if (t === "categories") return { data: CATROWS(), error: null };
+    if (t === "product_categories") return { data: CATROWS(), error: null };
     return { data: [], error: null };
   };
   assert.equal((await call(h, { method: "PATCH", headers: ADMIN, body: { id: 9, action: "archive" } })).statusCode, 200);
@@ -269,7 +269,7 @@ test("order: sends tiers to the database, forwards variantId, explains minimum q
 });
 test("public settings route returns the owner's category menu (Thakur Ji first)", async () => {
   const h = await load("../api/_routes/site/settings.js");
-  fake.resolve = (t) => (t === "categories" ? { data: CATROWS().filter((c) => c.active), error: null } : { data: [], error: null });
+  fake.resolve = (t) => (t === "product_categories" ? { data: CATROWS().filter((c) => c.active), error: null } : { data: [], error: null });
   resetCategoryCache(); const r = await call(h, {});
   assert.equal(r.body.categories.length, 14); assert.equal(r.body.categories[0].group, "thakur-ji-poshak");
 });
