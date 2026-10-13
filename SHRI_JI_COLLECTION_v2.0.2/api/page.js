@@ -1,8 +1,8 @@
 // Server-rendered public pages (home, shop, category, product) so Google and slow phones get real HTML.
 import { siteUrl } from "./_lib.js";
-import { queryProducts, getSettings, getProductReviewData } from "./_catalog.js";
+import { queryProducts, getSettings, getProductReviewData, loadCategories } from "./_catalog.js";
 import { homePage, listingPage, productPage, notFoundPage } from "./_layout.js";
-import { bySlug, groupBySlug } from "../public/js/categories.js";
+import { bySlug, groupBySlug, CATEGORIES } from "../public/js/categories.js";
 
 const one = (v) => (Array.isArray(v) ? v[0] : v);
 
@@ -16,6 +16,7 @@ export default async function handler(req, res) {
     res.send(html);
   };
   try {
+    await loadCategories();
     const settings = await getSettings();
     if (type === "product") {
       const { products } = await queryProducts({ slug });
@@ -33,8 +34,13 @@ export default async function handler(req, res) {
       const r = await queryProducts({ category, group, q: qs, sort, page: one(q.page), pageSize: 24 });
       return send(200, listingPage(site, { ...r, category, group, q: qs, sort, settings }));
     }
-    const { products } = await queryProducts({ limit: 12 });
-    return send(200, homePage(site, { products, settings }));
+    // Home page: Thakur Ji Poshak is the main business, so it gets the most space.
+    const [thakur, ladies, pool] = await Promise.all([
+      queryProducts({ group: "thakur-ji-poshak", limit: 8 }), queryProducts({ group: "ladies-wear", limit: 4 }), queryProducts({ group: "thakur-ji-poshak", limit: 60 }),
+    ]);
+    const catImages = {}, catCounts = {};
+    for (const x of pool.products) { catCounts[x.category] = (catCounts[x.category] || 0) + 1; if (!catImages[x.category] && x.image_urls?.[0]) catImages[x.category] = x.image_urls[0]; }
+    return send(200, homePage(site, { products: thakur.products, thakur: thakur.products, ladies: ladies.products, catImages, catCounts, settings }));
   } catch (e) {
     console.error("[page]", e?.message || e);
     res.status(500).setHeader("Content-Type", "text/html; charset=utf-8").setHeader("Cache-Control", "no-store");

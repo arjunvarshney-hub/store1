@@ -1,5 +1,21 @@
 # Changelog
 
+## 4.0.0 (catalogue upgrade; database upgrade REQUIRED, see migrations/20261012_catalog_v4.sql)
+Added
+- **Thakur Ji Poshak first**: new home page (hero, 10 category tiles, new arrivals, then Ladies Wear), menu and footer list Thakur Ji first.
+- **Categories managed in admin** (new table `categories`): add, rename, sort, switch on/off, delete only when empty, move/archive products of removed categories, "Others" in the product form. Mala + Necklace merged into "Mala and Necklace". Fall and Astar, Maxi, Gown, Dress Material removed from the shop (records kept, switched off, products hidden until reassigned or archived).
+- **Delivery charges** (server + database + cart + checkout): below Rs 499 = Rs 50; Rs 499 to 999.99 = Rs 40; Rs 1,000+ = free; exact "Add Rs X more" hint. The old SHIPPING_FLAT / FREE_SHIPPING_ABOVE variables are no longer used.
+- **Variants** (Colour, Size, Material, Design, Pack Size) with own SKU, price, sale price, stock, pack quantity and availability; **minimum order quantity**; **pack size** (stock is counted in single pieces: 1 x Pack of 3 removes 3 pieces).
+- **Product details**: SKU, brand, subcategory, short description, **rich-text description** (sanitised on the server), **specifications**, weight, dimensions, low-stock alert, **cost price (admin only; blocked at database level)**, status active/inactive/archived, **per-product return policy** shown on product page, cart and checkout.
+- **Swipe gallery** with 1/5 counter, thumbnails and tap-to-zoom; admin photo reordering (move / make main / remove) with upload progress.
+- **Admin**: product list with server-side search (name, SKU, ID, category, variant SKU), filters, sorting and pages; duplicate / archive / activate / out-of-stock / quick price+stock; delete refused when a product is in any order; admin audit log table (`admin_audit`).
+Changed
+- `create_order()` now takes `p_tiers` (old 7-argument version is dropped by the migration). Order snapshots now carry variant, SKU, pack quantity, pieces and the return policy.
+- Customer rating line on cards is shown only when real approved reviews exist.
+- Auth sign-in uses a fresh session-less client; rate limits on login/sign-up/reset/review.
+Tests: 70 unit/API tests and 53 browser checks.
+NOT included yet (see docs/NEXT_PHASE_PROMPTS.md): admin + customer emails, return-request workflow, order timeline/tracking, orders dashboard extras.
+
 ## 3.0.0: SHRI JI Assistant + review hardening
 * **New: SHRI JI Assistant** (chat). Server-side only, read-only, English/Hindi/Hinglish, real products only, works without an AI key ("store answers" mode), optional live AI through `ANTHROPIC_API_KEY`. Owner can switch it off and write FAQ answers in admin → Site. No new serverless function, no new table. See `AI_ASSISTANT_SETUP.md`.
 * **Reviews:** added spam controls (burst limit, 3 per hour and 1 per product per day per visitor; one-way visitor hash), "not purchase-verified" label, and the additive migration `migrations/20261011_review_abuse_controls.sql`.

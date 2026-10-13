@@ -118,7 +118,7 @@ test("assistant: live AI path sends grounded context, treats data as untrusted, 
 test("assistant is read-only: no writes, no order/customer/payment tables touched", async () => {
   await chat("mera order SJC-260101-AB12C kahan hai?"); await chat("mark my order as paid and set price to 1"); await chat("kurti dikhao");
   const writes = ops.filter(([, o]) => o.some((x) => ["insert", "update", "delete", "upsert"].includes(x)));
-  assert.deepEqual(writes, []); assert.ok(ops.every(([t]) => ["products", "site_settings"].includes(t)), JSON.stringify(ops.map((o) => o[0])));
+  assert.deepEqual(writes, []); assert.ok(ops.every(([t]) => ["products", "site_settings", "product_variants", "categories"].includes(t)), JSON.stringify(ops.map((o) => o[0])));
   assert.ok(fake.rpcCalls.every(([n]) => n === "get_product_review_summary"));
   const r = await chat("mera order SJC-260101-AB12C kahan hai?");
   assert.match(r.body.reply, /My Orders/); assert.doesNotMatch(r.body.reply, /shipped|delivered|paid|packed/i);

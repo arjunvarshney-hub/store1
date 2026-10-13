@@ -1,4 +1,5 @@
 // Shared server helpers. Files starting with "_" are NOT exposed as routes by Vercel.
+import { DELIVERY_TIERS } from "../public/js/delivery.js";
 import crypto from "node:crypto";
 
 export class HttpError extends Error {
@@ -133,10 +134,16 @@ export function route(methods, fn, { csrf = true } = {}) {
   };
 }
 
-export const shippingRule = () => ({
-  flat: Math.max(0, Number(process.env.SHIPPING_FLAT || 0) || 0),
-  freeAbove: process.env.FREE_SHIPPING_ABOVE ? Number(process.env.FREE_SHIPPING_ABOVE) || null : null,
-});
+/** Delivery charge rule (see public/js/delivery.js). The old SHIPPING_FLAT / FREE_SHIPPING_ABOVE variables are no longer used. */
+export const shippingRule = () => ({ tiers: DELIVERY_TIERS });
+
+/** Records an important admin action. Best effort: a logging problem never blocks the action itself. */
+export async function audit(user, action, entity, entityId, detail = null) {
+  try {
+    const db = await admin();
+    await db.from("admin_audit").insert({ admin_id: user?.id || null, action, entity, entity_id: entityId == null ? null : String(entityId), detail });
+  } catch { /* ignore */ }
+}
 
 /** Maps Supabase auth errors to messages a customer can act on. */
 export function friendlyAuthError(e, fallback) {

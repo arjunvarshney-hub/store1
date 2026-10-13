@@ -41,7 +41,7 @@ test("CSRF: cross-site write is blocked even with a valid admin cookie", async (
 });
 test("admin product create ignores unknown fields and rejects bad data", async () => {
   const h = await load("../api/_routes/admin/products.js"); let inserted;
-  fake.resolve = (t, ops) => { const ins = ops.find((o) => o[0] === "insert"); if (ins) inserted = ins[1][0]; return { data: { id: 1, ...inserted }, error: null }; };
+  fake.resolve = (t, ops) => { const ins = ops.find((o) => o[0] === "insert"); if (ins && t === "products") inserted = ins[1][0]; return { data: t === "products" ? { id: 1, ...inserted } : [], error: null }; };
   const hd = { ...same, ...cookieFor("tokAdmin") };
   const bad = await call(h, { method: "POST", headers: hd, body: { name: "A product", category: "nope", price: 10 } });
   assert.equal(bad.statusCode, 400);
@@ -275,7 +275,7 @@ test("product SSR remains available when the optional reviews migration has not 
   fake.rpcImpl = async () => ({ data: null, error: { code: "PGRST202", message: "function not found in schema cache" } });
   const res = await call(h, { query: { type: "product", slug: "red-poshak-7" } });
   assert.equal(res.statusCode, 200);
-  assert.match(res.body, /Customer ratings coming soon/);
+  assert.match(res.body, /temporarily unavailable|not available right now/);
   assert.match(res.body, /Ratings and reviews are temporarily unavailable/);
   assert.doesNotMatch(res.body, /id="reviewForm"/);
 });

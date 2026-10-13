@@ -41,6 +41,10 @@
       "destination": "/api/admin?action=reviews"
     },
     {
+      "source": "/api/admin/categories",
+      "destination": "/api/admin?action=categories"
+    },
+    {
       "source": "/api/admin/upload-image",
       "destination": "/api/upload-image"
     },
@@ -63,34 +67,6 @@
     {
       "source": "/robots.txt",
       "destination": "/api/site?action=robots"
-    },
-    {
-      "source": "/api/auth/:action",
-      "destination": "/api/auth?action=:action"
-    },
-    {
-      "source": "/api/admin/products",
-      "destination": "/api/admin?action=products"
-    },
-    {
-      "source": "/api/admin/orders",
-      "destination": "/api/admin?action=orders"
-    },
-    {
-      "source": "/api/admin/upload-image",
-      "destination": "/api/upload-image"
-    },
-    {
-      "source": "/api/orders/my",
-      "destination": "/api/orders?action=my"
-    },
-    {
-      "source": "/api/pay",
-      "destination": "/api/orders?action=pay"
-    },
-    {
-      "source": "/api/verify-payment",
-      "destination": "/api/orders?action=verify"
     },
     {
       "source": "/api/admin/settings",
