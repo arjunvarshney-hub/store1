@@ -33,3 +33,24 @@ Status words: `PASS`, `FAIL`, `PARTIALLY IMPLEMENTED`, `NOT TESTABLE`, `NOT IMPL
 ## Test evidence (run in this environment)
 * `npm test`: 50 tests, 50 pass (34 existing + 16 new: assistant, review limits).
 * `npm run test:e2e`: 127 browser checks (Chromium, phone 360 px / 320 px, desktop 1280 px), 127 pass, run twice. Uses an in-memory fake of Supabase and a stubbed Razorpay/AI provider. It proves UI + API logic, **not** the real SQL, real Supabase or real providers.
+
+
+---
+## v4.0.0 status against the owner's brief (statuses: PASS, FAIL, PARTIALLY IMPLEMENTED, NOT TESTABLE, NOT IMPLEMENTED)
+| Brief section | Status | Evidence / note |
+|---|---|---|
+| 1 Thakur Ji Poshak first (home, nav, tiles, mobile) | PASS | browser checks: order of sections, menu, hero button, no overflow at 360px |
+| 2 Categories (10 + 4, removed ones hidden, admin add/rename/sort/on-off/delete, reassign/archive) | PASS (code + tests); SQL NOT TESTABLE on real DB | tests/v4.test.mjs, tests/e2e/v4.py |
+| 3 Product form (SKU, category dropdown + Others, variants, min qty, pack size, pricing, cost price hidden) | PASS (code + tests); SQL NOT TESTABLE on real DB | unit + browser; cost-price column grant checked in tests |
+| 4 Images (multi upload, preview, remove, reorder, main, progress, swipe, thumbnails, zoom, 1/N) | PARTIALLY IMPLEMENTED | reorder uses buttons (not drag-and-drop); real Android swipe NOT TESTABLE (emulated scroll tested) |
+| 5 Rich text description (sanitised, preserved formatting) | PASS | 10 XSS payloads + formatting tests; cart/order summaries do not show descriptions |
+| 6 Specifications | PASS | admin rows add/remove/reorder; hidden when empty |
+| 7 Delivery charges 50 / 40 / free, server side, hint, boundaries | PASS (code); DB function NOT TESTABLE on real DB | boundary tests 498.99 / 499 / 999.99 / 1000; browser totals |
+| 8 Cart and checkout | PARTIALLY IMPLEMENTED | variants, pack, min qty, delivery, totals done; separate house/street/landmark address fields and coupons NOT IMPLEMENTED |
+| 9 Customer order tracking (timeline, return/cancel stages) | NOT IMPLEMENTED | existing statuses unchanged; see docs/NEXT_PHASE_PROMPTS.md |
+| 10 Product-specific return policy | PARTIALLY IMPLEMENTED | fields, product page, cart/checkout notice, order snapshot done; return-request workflow NOT IMPLEMENTED |
+| 11 Admin product management actions | PASS | duplicate, archive, activate, out of stock, quick price/stock, safe delete |
+| 12 Admin search / sort / filters | PASS | server-side; tests change result sets and order |
+| 13 Admin order management extras (date range, delivery status, audit view) | NOT IMPLEMENTED | admin_audit table + logging exist; no viewer yet |
+| 14 Email notifications | NOT IMPLEMENTED | `email_events` table exists for the next phase |
+| Brief sections after 14 | NOT TESTABLE | the text supplied ended in the middle of section 14 |

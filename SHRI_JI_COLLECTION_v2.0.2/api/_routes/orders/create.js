@@ -19,8 +19,7 @@ export default route(["POST"], async (req, res) => {
   const db = await admin();
   const ship = shippingRule();
   const { data, error } = await db.rpc("create_order", {
-    p_user: user.id, p_customer: cust, p_items: items, p_method: method, p_key: key,
-    p_shipping_flat: ship.flat, p_free_above: ship.freeAbove,
+    p_user: user.id, p_customer: cust, p_items: items, p_method: method, p_key: key, p_tiers: ship.tiers,
   });
   let result = data;
   if (error) {
@@ -32,6 +31,11 @@ export default route(["POST"], async (req, res) => {
     if (!result) {
       if (m.includes("OUT_OF_STOCK:")) throw new HttpError(409, `Sorry, "${m.split("OUT_OF_STOCK:")[1]}" does not have enough stock. Please reduce the quantity in your cart.`);
       if (m.includes("SIZE_REQUIRED:")) throw new HttpError(400, `Please choose a size for "${m.split("SIZE_REQUIRED:")[1]}".`);
+      const mq = /MIN_QTY:(.*):(\d+)\s*$/.exec(m);
+      if (mq) throw new HttpError(409, `"${mq[1]}" needs a minimum order of ${mq[2]}. Please increase the quantity in your cart.`);
+      if (m.includes("VARIANT_REQUIRED:")) throw new HttpError(400, `Please choose the colour / pack options for "${m.split("VARIANT_REQUIRED:")[1]}".`);
+      if (m.includes("VARIANT_UNAVAILABLE:")) throw new HttpError(409, `The option you chose for "${m.split("VARIANT_UNAVAILABLE:")[1]}" is not available any more. Please choose it again.`);
+      if (error.code === "PGRST202" || /could not find the function/i.test(m)) throw new HttpError(503, "The shop is being upgraded. Please try again in a few minutes.");
       if (m.includes("UNAVAILABLE")) throw new HttpError(409, "One of the products in your cart is no longer available. Please review your cart.");
       if (m.includes("INVALID_ITEMS")) throw new HttpError(400, "Your cart has an invalid item.");
       throw error;

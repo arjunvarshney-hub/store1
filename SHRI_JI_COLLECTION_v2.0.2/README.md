@@ -1,5 +1,18 @@
 # SHRI JI COLLECTION: online store
 
+## NEW in v4.0.0 (read this first if you are upgrading)
+
+**Order of steps (important):** 1) take a backup, 2) run `migrations/20261012_catalog_v4.sql` in Supabase (SQL Editor), 3) deploy this code to a Preview and test, 4) merge to production. The shop pages keep working if the code is deployed before the SQL, but **placing orders needs the SQL** (it shows "The shop is being upgraded" until then). Details: `DEPLOYMENT_CHECKLIST.md`.
+
+What you can now do in the admin panel (works on a phone):
+- **Categories tab**: add, rename, reorder, switch on/off, delete (only when empty). Products of removed categories (Maxi, Gown, Fall and Astar, Dress Material) are **hidden, not deleted**; a red box in Products and the Categories tab lets you move them to another category or archive them.
+- **Products tab**: search (name, SKU, ID, category, variant SKU), filters, sorting, pages. Buttons: Edit, Price / stock, Duplicate, Activate / Deactivate, Archive, Mark out of stock, Delete (refused if the product was ever ordered; use Archive).
+- **Product form** has 8 sections: basic info, category (pick, search, or "Others" to create a new one), price and stock (cost price is private), variants, photos (move / make main / remove, upload progress), description (rich text editor), specifications, and the return policy of this product.
+- **Stock is counted in single pieces.** "Pack size 3" means one pack has 3 pieces; selling 1 pack reduces stock by 3. "Minimum order quantity" is the least number of packs a customer must buy.
+- **Delivery charge** (automatic): subtotal below ₹499 = ₹50; ₹499 to ₹999.99 = ₹40; ₹1,000 or more = free. Calculated on the price after discounts, on the server.
+
+Not in this version yet: emails, return-request workflow, order timeline. See `docs/NEXT_PHASE_PROMPTS.md`.
+
 Thakur Ji Poshak & Ladies Wear, Sarai Tareen (Sambhal). Vercel (static pages + serverless API) · Supabase (Auth, Postgres, Storage) · Razorpay (UPI / Google Pay / cards) + Cash on Delivery.
 
 The owner manages everything from **/admin** on a phone. No code editing is needed.
@@ -36,8 +49,7 @@ tests/             unit + API tests (npm test) and a browser E2E suite (npm run 
 | `RAZORPAY_WEBHOOK_SECRET` | the secret *you type* when creating the webhook (step 4) |
 | `CRON_SECRET` | any long random string (protects the nightly clean-up job) |
 | `SITE_URL` | your final address, e.g. `https://www.shrijicollection.in` (no trailing `/`) |
-| `SHIPPING_FLAT` *(optional)* | delivery charge in ₹ (default `0` = free) |
-| `FREE_SHIPPING_ABOVE` *(optional)* | order value above which delivery is free |
+| *(retired)* `SHIPPING_FLAT`, `FREE_SHIPPING_ABOVE` | no longer used. Delivery is fixed: ₹50 below ₹499, ₹40 from ₹499 to ₹999.99, free from ₹1,000 |
 
 Never commit a real `.env`; `.gitignore` already excludes it. See `.env.example`.
 

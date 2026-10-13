@@ -5,16 +5,20 @@ import crypto from "node:crypto";
 import * as v from "../api/_validate.js";
 import { verifyCheckoutSignature, verifyWebhookSignature } from "../api/_razorpay.js";
 import { esc, effPrice, safeUrl, cardHtml } from "../public/js/render.js";
-import { CATEGORIES, GROUPS } from "../public/js/categories.js";
+import { CATEGORIES, GROUPS, catName } from "../public/js/categories.js";
 import { productPage, listingPage, homePage } from "../api/_layout.js";
 
 const throwsStatus = (fn, status = 400) => assert.throws(fn, (e) => e.status === status);
 const PFX = "https://abc.supabase.co/storage/v1/object/public/product-images/";
 const goodCustomer = { name: "Ram Kumar", phone: "+91 99278 92667", email: "R@Example.com", address: "House 4, Tirth Mandir road", city: "Sambhal", state: "Uttar Pradesh", pincode: "244303" };
 
-test("categories: all 18 required categories present, in 2 groups", () => {
-  assert.equal(CATEGORIES.length, 18); assert.equal(GROUPS.length, 2);
-  for (const n of ["Laddu Gopal Poshak", "Mukut", "Thakur Ji Shringar", "Kurti", "Fall and Astar", "Dress Material"]) assert.ok(CATEGORIES.some((c) => c.name === n), n);
+test("categories: Thakur Ji first (10) + Ladies Wear (4); removed categories are not offered but still readable", () => {
+  assert.equal(CATEGORIES.length, 14); assert.equal(GROUPS.length, 2); assert.equal(GROUPS[0].slug, "thakur-ji-poshak");
+  assert.equal(CATEGORIES.filter((c) => c.group === "thakur-ji-poshak").length, 10); assert.equal(CATEGORIES.filter((c) => c.group === "ladies-wear").length, 4);
+  for (const n of ["Laddu Gopal Poshak", "Krishna Poshak", "Devi Poshak", "Mukut", "Mala and Necklace", "Bansuri", "Jhula", "Singhasan", "Thakur Ji Shringar", "Other Thakur Ji Accessories", "Kurti", "Suit", "Dupatta", "Plazo"]) assert.ok(CATEGORIES.some((c) => c.name === n), n);
+  for (const n of ["Fall and Astar", "Maxi", "Gown", "Dress Material", "Saree"]) assert.ok(!CATEGORIES.some((c) => c.name === n), n + " must not be offered");
+  assert.equal(catName("maxi"), "Maxi");                           // old product records stay readable
+  assert.equal(CATEGORIES[0].group, "thakur-ji-poshak");           // primary business listed first
 });
 test("customer validation: normalises phone/email, rejects bad input", () => {
   const c = v.customer(goodCustomer);
@@ -30,7 +34,8 @@ test("customer validation: normalises phone/email, rejects bad input", () => {
 test("order items: only ids/qty/size are accepted; qty bounds enforced", () => {
   assert.deepEqual(v.orderItems([{ productId: "5", qty: 2, size: "M", price: 1 }]), [{ productId: 5, qty: 2, size: "M" }]);   // client price is dropped
   throwsStatus(() => v.orderItems([])); throwsStatus(() => v.orderItems([{ productId: 1, qty: 0 }]));
-  throwsStatus(() => v.orderItems([{ productId: 1, qty: 11 }])); throwsStatus(() => v.orderItems([{ productId: -1, qty: 1 }]));
+  throwsStatus(() => v.orderItems([{ productId: 1, qty: 51 }])); assert.equal(v.orderItems([{ productId: 1, qty: 50 }])[0].qty, 50);
+  assert.equal(v.orderItems([{ productId: 1, qty: 2, variantId: "7" }])[0].variantId, 7); throwsStatus(() => v.orderItems([{ productId: 1, qty: 1, variantId: -3 }])); throwsStatus(() => v.orderItems([{ productId: -1, qty: 1 }]));
   throwsStatus(() => v.orderItems([{ productId: 1, qty: 1.5 }])); throwsStatus(() => v.orderItems(Array(21).fill({ productId: 1, qty: 1 })));
 });
 test("product validation: whitelist, category, sale<price, image host", () => {
@@ -91,8 +96,8 @@ test("product ratings: real averages render on cards; no reviews are not fabrica
   const rated = cardHtml({ ...prod, review_count: 3, average_rating: 4.7 });
   assert.match(rated, /4\.7/); assert.match(rated, /3 reviews/); assert.match(rated, /★/);
   const unrated = cardHtml({ ...prod, reviews_enabled: true, review_count: 0, average_rating: null });
-  assert.match(unrated, /No reviews yet/); assert.doesNotMatch(unrated, /0\.0/);
-  assert.match(cardHtml({ ...prod, reviews_enabled: false, review_count: 0 }), /Ratings coming soon/);
+  assert.doesNotMatch(unrated, /No reviews yet|0\.0|★|☆|rating-mini/);      // nothing is shown when there are no approved reviews
+  assert.doesNotMatch(cardHtml({ ...prod, reviews_enabled: false, review_count: 0 }), /★|☆|rating-mini|coming soon/);
 });
 
 test("SSR reviews: approved customer text is escaped and only real aggregates enter Product JSON-LD", () => {

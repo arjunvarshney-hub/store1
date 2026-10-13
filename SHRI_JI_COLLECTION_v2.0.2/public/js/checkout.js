@@ -1,12 +1,13 @@
 import { api, cart, esc, money, $, msg, payOnline } from "./common.js";
-import { effPrice } from "./render.js";
+import { resolveLines, summarize, packText, nonReturnable } from "./cartcalc.js";
+import { DELIVERY_TIERS } from "./delivery.js";
 
 const box = $("#box");
 const SAVED = "sjc_addr_v1", IDEM = "sjc_idem_v1";
-let user, lines = [], shipping = { flat: 0, freeAbove: null }, busy = false;
+let user, lines = [], tiers = DELIVERY_TIERS, busy = false;
 
 const saved = () => { try { return JSON.parse(localStorage.getItem(SAVED) || "{}"); } catch { return {}; } };
-const sig = (items) => items.map((i) => `${i.id}:${i.size}:${i.qty}`).sort().join("|");
+const sig = (items) => items.map((i) => `${i.id}:${i.v || 0}:${i.size}:${i.qty}`).sort().join("|");
 function idemKey(items, pm) {   // same key for retries of the SAME cart => the server never creates a duplicate order
   const s = pm + "#" + sig(items);
   try { const c = JSON.parse(sessionStorage.getItem(IDEM) || "{}"); if (c.sig === s && c.key) return c.key; } catch {}
@@ -22,21 +23,17 @@ async function start() {
     const items = cart.read();
     if (!items.length) { box.innerHTML = `<div class="empty"><p>Your cart is empty.</p><a class="btn primary" href="/shop">Continue shopping</a></div>`; return; }
     const d = await api("/api/products?ids=" + [...new Set(items.map((i) => i.id))].join(","));
-    shipping = d.shipping || shipping;
+    tiers = d.shipping?.tiers || tiers;
     const by = Object.fromEntries(d.products.map((p) => [p.id, p]));
-    const bad = [];
-    lines = items.map((i) => {
-      const p = by[i.id];
-      if (!p || Number(p.stock) <= 0 || (p.sizes?.length && !p.sizes.includes(i.size))) { bad.push(p?.name || "An item"); return null; }
-      return { i, p, qty: Math.min(i.qty, Number(p.stock)), unit: effPrice(p) };
-    }).filter(Boolean);
-    if (bad.length) { box.innerHTML = `<div class="msg err">${esc(bad.join(", "))} is unavailable. Please update your cart.</div><a class="btn primary" href="/cart">Back to cart</a>`; return; }
+    const all = resolveLines(items, by), bad = all.filter((l) => l.bad || l.minIssue);
+    if (bad.length) { box.innerHTML = `<div class="msg err">${esc(bad.map((l) => (l.p?.name || "An item") + (l.minIssue ? ` (minimum order ${l.minIssue})` : "")).join(", "))} needs attention. Please update your cart.</div><a class="btn primary" href="/cart">Back to cart</a>`; return; }
+    lines = all;
     draw();
   } catch (e) { box.innerHTML = `<div class="msg err">${esc(e.message)}</div><button class="btn outline" id="retry">Try again</button>`; $("#retry").onclick = start; }
 }
 
 function draw() {
-  const s = saved(), sub = lines.reduce((n, l) => n + l.unit * l.qty, 0), ship = shipping.freeAbove && sub >= shipping.freeAbove ? 0 : shipping.flat;
+  const s = saved(), sm = summarize(lines, tiers), nr = nonReturnable(lines);
   box.innerHTML = `<form id="f" novalidate class="cartgrid"><div>
   <div class="panel"><h2>Delivery details</h2>
    <label class="f">Full name *<input name="name" autocomplete="name" required maxlength="80" value="${esc(s.name || user.name || "")}"></label>
@@ -50,9 +47,11 @@ function draw() {
    <label class="pay"><input type="radio" name="pm" value="COD" checked><span><b>Cash on Delivery</b><small>Pay in cash when your order arrives</small></span></label>
    <label class="pay"><input type="radio" name="pm" value="ONLINE"><span><b>Pay online</b><small>UPI / Google Pay / PhonePe / cards / netbanking via Razorpay</small></span></label></div>
    <p class="note">Never share your UPI PIN or card OTP with anyone. We never ask for it.</p></div></div>
-  <div class="panel"><h2>Order summary</h2>${lines.map((l) => `<div class="tot"><span>${esc(l.p.name)}${l.i.size ? ` (${esc(l.i.size)})` : ""} × ${l.qty}</span><span>${money(l.unit * l.qty)}</span></div>`).join("")}
-   <div class="tot" style="margin-top:8px"><span>Subtotal</span><span>${money(sub)}</span></div><div class="tot"><span>Delivery</span><span>${ship ? money(ship) : "Free"}</span></div>
-   <div class="tot big"><span>Total</span><span>${money(sub + ship)}</span></div>
+  <div class="panel"><h2>Order summary</h2>${lines.map((l) => `<div class="tot"><span>${esc(l.p.name)}${l.label ? ` (${esc(l.label)})` : l.i.size ? ` (${esc(l.i.size)})` : ""}${packText(l) ? ` <small class="muted">${esc(packText(l))}</small>` : ""} × ${l.qty}</span><span>${money(l.unit * l.qty)}</span></div>`).join("")}
+   <div class="tot" style="margin-top:8px"><span>Subtotal</span><span>${money(sm.sub)}</span></div><div class="tot"><span>Delivery</span><span>${sm.fee ? money(sm.fee) : "FREE"}</span></div>
+   <div class="tot big"><span>Total payable</span><span>${money(sm.total)}</span></div>
+   ${sm.remaining > 0 ? `<p class="freehint">Add ${money(sm.remaining)} more to unlock free delivery.</p>` : '<p class="freehint ok">You have free delivery.</p>'}
+   ${nr.length ? `<div class="msg info sm"><b>Non-returnable:</b> ${esc(nr.join(", "))}. These items cannot be returned (damaged, defective or wrong items can always be reported to us).</div>` : ""}
    <div id="m"></div><button class="btn primary lg" style="width:100%" id="go" type="submit">Place order</button>
    <p class="sm muted">By placing the order you confirm the details above are correct.</p></div></form>`;
   $("#f").addEventListener("submit", submit);
@@ -74,9 +73,9 @@ async function submit(e) {
   const pm = f.elements.pm.value;
   busy = true; $("#go").disabled = true; $("#go").textContent = "Placing order…"; msg($("#m"), "");
   try { localStorage.setItem(SAVED, JSON.stringify(c)); } catch {}
-  const items = lines.map((l) => ({ productId: l.p.id, qty: l.qty, size: l.i.size }));
+  const items = lines.map((l) => ({ productId: l.p.id, qty: l.qty, size: l.i.size, ...(l.v ? { variantId: l.v.id } : {}) }));
   try {
-    const d = await api("/api/orders", { method: "POST", body: { customer: c, items, paymentMethod: pm, idempotencyKey: idemKey(lines.map((l) => ({ id: l.p.id, size: l.i.size, qty: l.qty })), pm) } });
+    const d = await api("/api/orders", { method: "POST", body: { customer: c, items, paymentMethod: pm, idempotencyKey: idemKey(lines.map((l) => ({ id: l.p.id, v: l.v?.id, size: l.i.size, qty: l.qty })), pm) } });
     if (pm === "COD") return finish(d.orderNumber, "cod");
     if (!d.razorpay) { cart.clear(); return finish(d.orderNumber, "unpaid"); }
     $("#go").textContent = "Opening payment…";

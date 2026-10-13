@@ -1,5 +1,6 @@
 // Shared browser code: header/footer, API helper, cart, Razorpay launcher.
 import { headerHtml, footerHtml, logoHtml, esc, money } from "./render.js";
+import { setCategories } from "./categories.js";
 export { esc, money };
 
 export async function api(url, { method = "GET", body } = {}) {
@@ -24,17 +25,19 @@ export const fmtDate = (d) => new Date(d).toLocaleString("en-IN", { dateStyle: "
 
 // ---------- cart (ids/size/qty only; prices are always re-fetched from the server) ----------
 const KEY = "sjc_cart_v2";
-const ok = (x) => x && Number.isSafeInteger(x.id) && x.id > 0 && Number.isInteger(x.qty) && x.qty >= 1 && x.qty <= 10 && typeof x.size === "string";
+const ok = (x) => x && Number.isSafeInteger(x.id) && x.id > 0 && Number.isInteger(x.qty) && x.qty >= 1 && x.qty <= 50 && typeof x.size === "string" && (x.v === undefined || (Number.isSafeInteger(x.v) && x.v >= 0));
+const same = (i, id, size, v) => i.id === id && i.size === size && (i.v || 0) === (v || 0);
 export const cart = {
   read() { try { const a = JSON.parse(localStorage.getItem(KEY) || "[]"); return Array.isArray(a) ? a.filter(ok) : []; } catch { return []; } },
   write(a) { try { localStorage.setItem(KEY, JSON.stringify(a)); } catch { /* private mode */ } cart.badge(); },
-  add(id, size, qty) {
-    const a = cart.read(), x = a.find((i) => i.id === id && i.size === size);
-    if (x) x.qty = Math.min(10, x.qty + qty); else a.push({ id, size, qty: Math.min(10, qty) });
+  /** v = chosen product option (variant) id, or 0 for simple products. */
+  add(id, size, qty, v = 0) {
+    const a = cart.read(), x = a.find((i) => same(i, id, size, v));
+    if (x) x.qty = Math.min(50, x.qty + qty); else a.push({ id, size, qty: Math.min(50, qty), ...(v ? { v } : {}) });
     cart.write(a);
   },
-  setQty(id, size, qty) { cart.write(cart.read().map((i) => (i.id === id && i.size === size ? { ...i, qty: Math.max(1, Math.min(10, qty)) } : i))); },
-  remove(id, size) { cart.write(cart.read().filter((i) => !(i.id === id && i.size === size))); },
+  setQty(id, size, qty, v = 0) { cart.write(cart.read().map((i) => (same(i, id, size, v) ? { ...i, qty: Math.max(1, Math.min(50, qty)) } : i))); },
+  remove(id, size, v = 0) { cart.write(cart.read().filter((i) => !same(i, id, size, v))); },
   clear() { cart.write([]); },
   count() { return cart.read().reduce((n, i) => n + i.qty, 0); },
   badge() { const el = $("#cartCount"); if (!el) return; const n = cart.count(); el.textContent = n; el.hidden = !n; },
@@ -80,6 +83,12 @@ function init() {
       const u = d?.settings?.logo_url || "", a = $(".logo", h);
       if (a && u !== cached()) { a.innerHTML = logoHtml(u); }
       setCache(u);
+      if (Array.isArray(d?.categories) && d.categories.length) {          // owner-managed category menu
+        setCategories(d.categories);
+        const tmp = document.createElement("div"); tmp.innerHTML = headerHtml({ logo: u });
+        for (const sel of [".dnav-in", ".mn"]) { const x = $(sel, h), y = $(sel, tmp); if (x && y) x.innerHTML = y.innerHTML; }
+        if (f) f.innerHTML = footerHtml();
+      }
     }).catch(() => {});
   } else if (h) setCache($(".logo-img", h)?.getAttribute("src") || "");   // server-rendered pages keep the cache fresh
   if (f && !f.firstElementChild) f.innerHTML = footerHtml();

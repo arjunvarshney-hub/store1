@@ -41,3 +41,15 @@ See `.env.example`. Nothing new is required. `ANTHROPIC_API_KEY` is optional (as
 1. Vercel → Deployments → find the last deployment that worked → ⋯ → **Promote to Production** (instant).
 2. Then, in GitHub, revert the faulty pull request (button **Revert** on the merged PR).
 3. Database changes stay (they are additive and harmless).
+
+
+---
+## v4.0.0 release steps (database change included)
+1. **Backup**: Supabase → Database → Backups (or export). Prefer testing on a staging Supabase project first.
+2. **Preflight (read-only)** in SQL Editor: `select count(*) from public.products;` and `select count(*) from public.orders;` (write the numbers down).
+3. Run `migrations/20261012_catalog_v4.sql` once. It is additive: it creates `categories`, `product_variants`, `email_events`, `admin_audit`, adds product columns, replaces `create_order()` / `restore_order_stock()`, re-labels Mala and Necklace products to "Mala and Necklace" (old values saved in `migration_backup_product_category`) and **restricts public read access to products by column** so `cost_price` stays private.
+4. Check: `select count(*) from public.products;` is the same number; `select slug,name,active from public.categories order by sort_order;` shows 14 active + 6 switched-off.
+5. Deploy the code to a **Preview** (not production). Open `/api/health`, then do the smoke test: home page, a Thakur Ji category, a product with variants, add to cart, COD test order (check delivery charge and stock), cancel the order (stock returns), admin: add a product, add a category via "Others".
+6. Only after owner approval: merge to production.
+**Rollback**: code first (Vercel → Deployments → previous deployment → Promote / or revert the commit). Database: code from v3 does not work with the new `create_order()`; to go back run the previous `supabase.sql` (it recreates the old function) and, only if needed, the notes at the bottom of the migration file. New tables/columns are harmless to leave in place.
+**NOT TESTABLE here**: the SQL was not run on a real PostgreSQL (no database in my environment). It was reviewed line by line and its logic is mirrored and tested in JavaScript. Run it on staging first.
